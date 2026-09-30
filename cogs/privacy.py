@@ -1,7 +1,10 @@
 import os
 import discord
 from discord.ext import commands
+from dotenv import load_dotenv
 from database import RoxyDatabase, OPTED_OUT
+
+load_dotenv()
 
 # Optional public links to the full documents (PRIVACY.md / TERMS.md hosted somewhere) - shown as buttons on rr privacy
 DOCUMENT_LINKS = [

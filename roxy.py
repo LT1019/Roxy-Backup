@@ -738,15 +738,43 @@ async def on_command_error(ctx, error):
         # Only log unexpected errors
         print(f"❌ Command error: {error}")
 
-# Run Roxy!
-if __name__ == "__main__":
+def acquire_single_instance_lock():
+    """Only one Roxy per PC - two copies with the same token answer every command twice.
+    Holding a local port works as the lock: a second copy can't bind it."""
+    import socket
+    lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    if hasattr(socket, 'SO_EXCLUSIVEADDRUSE'):
+        lock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
     try:
-        token = os.getenv('DISCORD_TOKEN')
-        if token is None:
-            print("❌ DISCORD_TOKEN not found in environment variables!")
-            print("🔧 Check your .env file and make sure DISCORD_TOKEN is set correctly!")
-        else:
-            roxy.run(token)
-    except Exception as e:
-        print(f"❌ Failed to start Roxy: {e}")
+        lock.bind(('127.0.0.1', 47653))
+    except OSError:
+        return None
+    return lock
+
+# Run Roxy!
+# Exit codes (used by start_roxy.bat): 0 = clean shutdown, 1 = crash (restart), 2 = no token, 3 = already running
+if __name__ == "__main__":
+    import sys
+    
+    instance_lock = acquire_single_instance_lock()
+    if instance_lock is None:
+        print("⚠️ Roxy is already running on this PC - not starting a second copy.")
+        sys.exit(3)
+    
+    token = os.getenv('DISCORD_TOKEN')
+    if token is None:
+        print("❌ DISCORD_TOKEN not found in environment variables!")
         print("🔧 Check your .env file and make sure DISCORD_TOKEN is set correctly!")
+        sys.exit(2)
+    
+    try:
+        roxy.run(token)
+    except discord.LoginFailure as e:
+        print(f"❌ Discord rejected the token: {e}")
+        print("🔧 Check your .env file and make sure DISCORD_TOKEN is set correctly!")
+        sys.exit(2)
+    except Exception as e:
+        print(f"❌ Roxy crashed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)

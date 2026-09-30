@@ -220,7 +220,7 @@ class RoxyAdmin(commands.Cog):
                 "color": 0xe74c3c,
                 "achievements": [
                     "`Roxy Bot Administrator` - Bot admin status",
-                    "`Early Adopter` - Joined during beta testing",
+                    "`Early Adopter` - Used Roxy before 2027 (UTC) - automatic",
                     "`Event Participant` - Participated in special events",
                     "`Community Helper` - Helped other users significantly"
                 ]
@@ -257,7 +257,7 @@ class RoxyAdmin(commands.Cog):
                 "Gaming Achievements": "💡 **Tip:** Set your Discord status to 'Playing [Game]' to track sessions",
                 "Music Achievements": "💡 **Tip:** Listen to Spotify to track music sessions automatically",
                 "Social Achievements": "💡 **Tip:** Stay active in chat and participate in gaming sessions",
-                "Special Achievements": "💡 **Tip:** These are granted manually for special contributions"
+                "Special Achievements": "💡 **Tip:** Early Adopter is automatic for anyone using Roxy before 2027 (UTC) - the rest are granted manually"
             }
             
             embed.add_field(

@@ -6,7 +6,7 @@ import random
 import aiosqlite
 import time
 import psutil
-from datetime import datetime
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
 from config import ADMIN_USER_ID, is_admin, is_admin_id
@@ -638,6 +638,35 @@ async def refresh_stats(ctx, member: discord.Member = None):
         
     except Exception as e:
         await ctx.send(f"❌ Refresh error: {e}")
+
+# ==================== EARLY ADOPTER ====================
+
+EARLY_ADOPTER = "Early Adopter"
+EARLY_ADOPTER_DEADLINE = datetime(2027, 1, 1, tzinfo=timezone.utc)  # Anyone using Roxy before 2027 (UTC)
+early_adopters_checked = set()  # Users already checked this run - saves a database call per command
+
+@roxy.event
+async def on_command(ctx):
+    """Grant Early Adopter to anyone who uses a Roxy command before 2027 (UTC)"""
+    user = ctx.author
+    if user.bot or user.id in early_adopters_checked:
+        return
+    if datetime.now(timezone.utc) >= EARLY_ADOPTER_DEADLINE:
+        return
+    early_adopters_checked.add(user.id)
+
+    try:
+        await roxy.db.add_user(user.id, str(user), user.display_name)
+        if await roxy.db.give_achievement(user.id, EARLY_ADOPTER):
+            embed = discord.Embed(
+                title="🏅 Achievement Unlocked: Early Adopter!",
+                description=f"Thanks for using Roxy early, {user.mention}! This badge is only available until the end of 2026 (UTC).",
+                color=discord.Color.gold()
+            )
+            await ctx.send(embed=embed, delete_after=15)
+    except Exception as e:
+        early_adopters_checked.discard(user.id)  # Try again next command
+        print(f"❌ Error granting Early Adopter: {e}")
 
 # Error handler - Silent for admin commands
 @roxy.event

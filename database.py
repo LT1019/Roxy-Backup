@@ -121,7 +121,6 @@ class RoxyDatabase:
                         SET username = ?, display_name = ?, last_seen = ?
                         WHERE user_id = ?
                     """, (username, display_name, datetime.now().isoformat(), user_id))
-                    print(f"📝 Updated existing user: {display_name}")
                 else:
                     # Insert new user
                     await db.execute("""
@@ -129,7 +128,6 @@ class RoxyDatabase:
                         (user_id, username, display_name, join_date, last_seen, level, xp, total_listening_time) 
                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                     """, (user_id, username, display_name, datetime.now().isoformat(), datetime.now().isoformat(), 1, 0, 0))
-                    print(f"➕ Added new user: {display_name}")
                 
                 await db.commit()
                 
@@ -170,11 +168,9 @@ class RoxyDatabase:
                     
                     await db.commit()
                     
-                    print(f"📊 Updated stats - Messages: {new_messages}, XP: {new_xp}, Level: {new_level}")
                     
                     # Return new level if leveled up
                     if new_level > current_level:
-                        print(f"🎉 Level up! {current_level} → {new_level}")
                         return new_level
                 else:
                     print(f"❌ User {user_id} not found in database")
@@ -194,10 +190,6 @@ class RoxyDatabase:
                     SELECT * FROM users WHERE user_id = ?
                 """, (user_id,)) as cursor:
                     result = await cursor.fetchone()
-                    if result:
-                        print(f"📊 Retrieved stats for user {user_id}")
-                    else:
-                        print(f"❌ No stats found for user {user_id}")
                     return result
                     
         except Exception as e:
@@ -218,7 +210,12 @@ class RoxyDatabase:
                 await db.execute("""
                     UPDATE users SET current_game = ? WHERE user_id = ?
                 """, (game_name, user_id))
-                
+
+                # Discard any leftover unfinished session so it can't be closed by mistake later
+                await db.execute("""
+                    DELETE FROM game_sessions WHERE user_id = ? AND end_time IS NULL
+                """, (user_id,))
+
                 # Start new session
                 await db.execute("""
                     INSERT INTO game_sessions (user_id, game_name, start_time)
@@ -226,7 +223,6 @@ class RoxyDatabase:
                 """, (user_id, game_name, current_time))
                 
                 await db.commit()
-                print(f"🎮 Started game session: {game_name} at {current_time}")
                 
         except Exception as e:
             print(f"❌ Error in start_game_session: {e}")
@@ -254,7 +250,6 @@ class RoxyDatabase:
                         end_dt = datetime.now()
                         duration = int((end_dt - start_dt).total_seconds())
                         
-                        print(f"🕐 Game session timing - Start: {start_time_str}, End: {end_dt.isoformat()}, Duration: {duration}s")
                         
                         # Ensure minimum duration of 1 second
                         if duration < 1:
@@ -294,15 +289,10 @@ class RoxyDatabase:
                                 WHERE user_id = ?
                             """, (new_playtime, new_xp, new_level, user_id))
                             
-                            print(f"📊 Playtime updated: {current_playtime}s → {new_playtime}s (+{duration}s)")
-                            print(f"📊 XP updated: {current_xp} → {new_xp} (+{xp_gained})")
                             
-                            if new_level > current_level:
-                                print(f"🎉 Gaming level up! {current_level} → {new_level}")
                         
                         await db.commit()
                         
-                        print(f"🎮 Ended game session: {game_name}, Duration: {duration}s, XP gained: {xp_gained}")
                         return duration
                         
                     except ValueError as e:
@@ -311,7 +301,6 @@ class RoxyDatabase:
                         return 0
                         
                 else:
-                    print(f"❌ No active game session found for user {user_id}")
                     return 0
                     
         except Exception as e:
@@ -332,7 +321,12 @@ class RoxyDatabase:
                 await db.execute("""
                     UPDATE users SET current_song = ?, current_artist = ? WHERE user_id = ?
                 """, (song_title, artist_name, user_id))
-                
+
+                # Discard any leftover unfinished session so it can't be closed by mistake later
+                await db.execute("""
+                    DELETE FROM listening_sessions WHERE user_id = ? AND end_time IS NULL
+                """, (user_id,))
+
                 # Start new listening session
                 await db.execute("""
                     INSERT INTO listening_sessions (user_id, song_title, artist_name, album_name, start_time)
@@ -340,7 +334,6 @@ class RoxyDatabase:
                 """, (user_id, song_title, artist_name, album_name, current_time))
                 
                 await db.commit()
-                print(f"🎵 Started listening session: {song_title} by {artist_name} at {current_time}")
                 
         except Exception as e:
             print(f"❌ Error in start_listening_session: {e}")
@@ -368,7 +361,6 @@ class RoxyDatabase:
                         end_dt = datetime.now()
                         duration = int((end_dt - start_dt).total_seconds())
                         
-                        print(f"🕐 Listening session timing - Start: {start_time_str}, End: {end_dt.isoformat()}, Duration: {duration}s")
                         
                         # Ensure minimum duration of 1 second
                         if duration < 1:
@@ -409,15 +401,10 @@ class RoxyDatabase:
                                 WHERE user_id = ?
                             """, (new_listening_time, new_xp, new_level, user_id))
                             
-                            print(f"📊 Listening time updated: {current_listening_time}s → {new_listening_time}s (+{duration}s)")
-                            print(f"📊 XP updated: {current_xp} → {new_xp} (+{xp_gained})")
                             
-                            if new_level > current_level:
-                                print(f"🎉 Music level up! {current_level} → {new_level}")
                         
                         await db.commit()
                         
-                        print(f"🎵 Ended listening session: {song_title} by {artist_name}, Duration: {duration}s, XP gained: {xp_gained}")
                         return duration
                         
                     except ValueError as e:
@@ -426,7 +413,6 @@ class RoxyDatabase:
                         return 0
                         
                 else:
-                    print(f"❌ No active listening session found for user {user_id}")
                     return 0
                     
         except Exception as e:
@@ -507,7 +493,6 @@ class RoxyDatabase:
                     LIMIT ?
                 """, (user_id, limit)) as cursor:
                     result = await cursor.fetchall()
-                    print(f"📊 Retrieved {len(result)} favorite artists for user {user_id}")
                     return result
                     
         except Exception as e:
@@ -533,7 +518,6 @@ class RoxyDatabase:
                     LIMIT ?
                 """, (user_id, limit)) as cursor:
                     result = await cursor.fetchall()
-                    print(f"📊 Retrieved {len(result)} favorite songs for user {user_id}")
                     return result
                     
         except Exception as e:
@@ -570,7 +554,6 @@ class RoxyDatabase:
                             print(f"❌ Error parsing datetime: {end_time_str}")
                             continue
                     
-                    print(f"📊 Retrieved {len(formatted_results)} recent listening history for user {user_id}")
                     return formatted_results
                     
         except Exception as e:
@@ -637,13 +620,15 @@ class RoxyDatabase:
                 achievements.append("⏲️ Continuous Play (1+ hour)")
             
             # Artist/Song variety achievements
-            favorite_artists = await self.get_favorite_artists(user_id, 10)
-            if len(favorite_artists) >= 50:
+            artist_count = await self.count_distinct_artists(user_id)
+            if artist_count >= 50:
                 achievements.append("🎨 Music Explorer (50+ artists)")
-            elif len(favorite_artists) >= 20:
+            elif artist_count >= 20:
                 achievements.append("🎯 Diverse Taste (20+ artists)")
-            elif len(favorite_artists) >= 10:
+            elif artist_count >= 10:
                 achievements.append("🎪 Multi-Genre (10+ artists)")
+
+            favorite_artists = await self.get_favorite_artists(user_id, 1)
             
             # Top artist dedication
             if favorite_artists:
@@ -657,7 +642,6 @@ class RoxyDatabase:
                 elif top_artist_hours >= 10:
                     achievements.append(f"😊 Enjoys {favorite_artists[0][0]} (10+ hours)")
             
-            print(f"🏆 Generated {len(achievements)} music achievements for user {user_id}")
             return achievements
             
         except Exception as e:
@@ -666,6 +650,50 @@ class RoxyDatabase:
             traceback.print_exc()
             return []
     
+    async def count_distinct_artists(self, user_id: int) -> int:
+        """Count how many different artists a user has listened to"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT COUNT(DISTINCT artist_name) FROM listening_sessions
+                    WHERE user_id = ? AND duration IS NOT NULL
+                """, (user_id,)) as cursor:
+                    result = await cursor.fetchone()
+                    return result[0] if result else 0
+        except Exception as e:
+            print(f"❌ Error in count_distinct_artists: {e}")
+            return 0
+
+    async def count_distinct_games(self, user_id: int) -> int:
+        """Count how many different games a user has played"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT COUNT(DISTINCT game_name) FROM game_sessions
+                    WHERE user_id = ? AND duration IS NOT NULL
+                """, (user_id,)) as cursor:
+                    result = await cursor.fetchone()
+                    return result[0] if result else 0
+        except Exception as e:
+            print(f"❌ Error in count_distinct_games: {e}")
+            return 0
+
+    # ==================== SESSION RECOVERY ====================
+
+    async def discard_unfinished_sessions(self) -> Tuple[int, int]:
+        """Discard sessions left open by a crash/restart - their real end time is unknown.
+        No XP or time was credited for them yet, so user totals are unaffected."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                game_cursor = await db.execute("DELETE FROM game_sessions WHERE end_time IS NULL")
+                listen_cursor = await db.execute("DELETE FROM listening_sessions WHERE end_time IS NULL")
+                await db.execute("UPDATE users SET current_game = NULL, current_song = NULL, current_artist = NULL")
+                await db.commit()
+                return game_cursor.rowcount, listen_cursor.rowcount
+        except Exception as e:
+            print(f"❌ Error in discard_unfinished_sessions: {e}")
+            return 0, 0
+
     # ==================== LEADERBOARD METHODS ====================
     
     async def get_leaderboard(self, category: str, limit: int = 10) -> List[Tuple]:
@@ -693,7 +721,6 @@ class RoxyDatabase:
                     LIMIT ?
                 """, (limit,)) as cursor:
                     result = await cursor.fetchall()
-                    print(f"📊 Retrieved {len(result)} entries for {category} leaderboard")
                     return result
                     
         except Exception as e:
@@ -738,7 +765,6 @@ class RoxyDatabase:
                 """, (total_playtime, total_listening_time, new_level, user_id))
                 
                 await db.commit()
-                print(f"🔄 Refreshed stats for user {user_id}: {total_playtime}s playtime, {total_listening_time}s listening time, level {new_level}")
                 return total_playtime, total_listening_time
                 
         except Exception as e:
@@ -817,7 +843,6 @@ class RoxyDatabase:
                     LIMIT ?
                 """, (user_id, limit)) as cursor:
                     result = await cursor.fetchall()
-                    print(f"📊 Retrieved {len(result)} favorite games for user {user_id}")
                     return result
                     
         except Exception as e:
@@ -852,7 +877,6 @@ class RoxyDatabase:
                             print(f"❌ Error parsing datetime: {end_time_str}")
                             continue
                     
-                    print(f"📊 Retrieved {len(formatted_results)} recent games for user {user_id}")
                     return formatted_results
                     
         except Exception as e:
@@ -915,7 +939,7 @@ class RoxyDatabase:
                 achievements.append("⏲️ Focused Session (1+ hour)")
             
             # Get favorite games for game-specific achievements
-            favorite_games = await self.get_favorite_games(user_id, 3)
+            favorite_games = await self.get_favorite_games(user_id, 1)
             if favorite_games:
                 top_game_playtime = favorite_games[0][1]  # playtime in seconds
                 top_game_hours = top_game_playtime // 3600
@@ -928,14 +952,14 @@ class RoxyDatabase:
                     achievements.append(f"😊 Enjoys {favorite_games[0][0]} (5+ hours)")
             
             # Variety achievements
-            if len(favorite_games) >= 10:
+            game_count = await self.count_distinct_games(user_id)
+            if game_count >= 10:
                 achievements.append("🎨 Game Variety Expert (10+ games)")
-            elif len(favorite_games) >= 5:
+            elif game_count >= 5:
                 achievements.append("🎯 Game Explorer (5+ games)")
-            elif len(favorite_games) >= 3:
+            elif game_count >= 3:
                 achievements.append("🎪 Multi-Gamer (3+ games)")
             
-            print(f"🏆 Generated {len(achievements)} gaming achievements for user {user_id}")
             return achievements
             
         except Exception as e:
@@ -1071,7 +1095,6 @@ class RoxyDatabase:
                     result = await cursor.fetchone()
                     stats['active_users'] = result[0] if result else 0
                 
-                print(f"📊 Generated database statistics")
                 return stats
                 
         except Exception as e:
@@ -1089,7 +1112,7 @@ class RoxyDatabase:
                 # Get count of users to be deleted
                 async with db.execute("""
                     SELECT COUNT(*) FROM users 
-                    WHERE last_seen < ? AND total_messages = 0
+                    WHERE last_seen < ? AND total_messages = 0 AND total_playtime = 0 AND total_listening_time = 0
                 """, (cutoff_date,)) as cursor:
                     result = await cursor.fetchone()
                     count_to_delete = result[0] if result else 0
@@ -1098,7 +1121,7 @@ class RoxyDatabase:
                     # Delete inactive users with 0 messages
                     await db.execute("""
                         DELETE FROM users 
-                        WHERE last_seen < ? AND total_messages = 0
+                        WHERE last_seen < ? AND total_messages = 0 AND total_playtime = 0 AND total_listening_time = 0
                     """, (cutoff_date,))
                     
                     await db.commit()
@@ -1125,7 +1148,6 @@ class RoxyDatabase:
                     LIMIT ?
                 """, (limit,)) as cursor:
                     result = await cursor.fetchall()
-                    print(f"👑 Retrieved {len(result)} users for admin review")
                     return result
                     
         except Exception as e:
@@ -1137,16 +1159,104 @@ class RoxyDatabase:
     async def backup_database(self) -> str:
         """Create database backup (Admin only)"""
         try:
-            import shutil
-            from datetime import datetime
-            
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_path = f"data/roxy_backup_{timestamp}.db"
-            
-            shutil.copy2(self.db_path, backup_path)
+
+            # SQLite's online backup API is safe even while Roxy is writing
+            async with aiosqlite.connect(self.db_path) as source, aiosqlite.connect(backup_path) as target:
+                await source.backup(target)
+
             print(f"👑 Database backup created: {backup_path}")
             return backup_path
-            
+
         except Exception as e:
             print(f"❌ Error creating backup: {e}")
             return ""
+
+    async def add_xp(self, user_id: int, amount: int) -> Optional[Tuple[int, int]]:
+        """Add (or remove, if negative) XP and recalculate level (Admin only).
+        Returns (new_xp, new_level), or None if the user isn't tracked."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("SELECT xp FROM users WHERE user_id = ?", (user_id,)) as cursor:
+                    result = await cursor.fetchone()
+                if not result:
+                    return None
+
+                new_xp = max(0, result[0] + amount)
+                new_level = self.calculate_level_from_xp(new_xp)
+                await db.execute("UPDATE users SET xp = ?, level = ? WHERE user_id = ?", (new_xp, new_level, user_id))
+                await db.commit()
+                print(f"👑 Admin changed user {user_id} XP by {amount} → {new_xp} XP, level {new_level}")
+                return new_xp, new_level
+
+        except Exception as e:
+            print(f"❌ Error in add_xp: {e}")
+            return None
+
+    # ==================== CUSTOM ACHIEVEMENTS ====================
+
+    async def give_achievement(self, user_id: int, achievement_name: str) -> bool:
+        """Grant a custom achievement. Returns False if the user already has it."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT 1 FROM achievements WHERE user_id = ? AND achievement_name = ?
+                """, (user_id, achievement_name)) as cursor:
+                    if await cursor.fetchone():
+                        return False
+
+                await db.execute("""
+                    INSERT INTO achievements (user_id, achievement_name, earned_date) VALUES (?, ?, ?)
+                """, (user_id, achievement_name, datetime.now().isoformat()))
+                await db.commit()
+                return True
+
+        except Exception as e:
+            print(f"❌ Error in give_achievement: {e}")
+            return False
+
+    async def remove_achievement(self, user_id: int, achievement_name: str) -> bool:
+        """Remove a custom achievement. Returns False if the user didn't have it."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute("""
+                    DELETE FROM achievements WHERE user_id = ? AND achievement_name = ?
+                """, (user_id, achievement_name))
+                await db.commit()
+                return cursor.rowcount > 0
+
+        except Exception as e:
+            print(f"❌ Error in remove_achievement: {e}")
+            return False
+
+    async def get_user_custom_achievements(self, user_id: int) -> List[Tuple[str, str]]:
+        """Get (achievement_name, earned_date) for a user's granted achievements"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT achievement_name, earned_date FROM achievements
+                    WHERE user_id = ? ORDER BY earned_date
+                """, (user_id,)) as cursor:
+                    return await cursor.fetchall()
+
+        except Exception as e:
+            print(f"❌ Error in get_user_custom_achievements: {e}")
+            return []
+
+    async def get_achievement_holders(self, achievement_name: str) -> List[Tuple[int, str, str]]:
+        """Get (user_id, display_name, earned_date) for everyone with an achievement"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT achievements.user_id, users.display_name, achievements.earned_date
+                    FROM achievements
+                    LEFT JOIN users ON achievements.user_id = users.user_id
+                    WHERE achievements.achievement_name = ?
+                    ORDER BY achievements.earned_date
+                """, (achievement_name,)) as cursor:
+                    return await cursor.fetchall()
+
+        except Exception as e:
+            print(f"❌ Error in get_achievement_holders: {e}")
+            return []

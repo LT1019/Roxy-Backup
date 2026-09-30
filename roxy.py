@@ -9,6 +9,7 @@ import psutil
 from datetime import datetime
 from dotenv import load_dotenv
 from database import RoxyDatabase
+from config import ADMIN_USER_ID, is_admin, is_admin_id
 
 # Load Roxy's configuration
 load_dotenv()
@@ -32,10 +33,17 @@ class RoxyBot(commands.Bot):
         self.active_sessions = {}  # Gaming sessions
         self.active_listening = {}  # Music listening sessions
         self.start_time: float = 0.0  # Add start_time attribute with type hint
-        
+        self.custom_status = None  # Set by !r setstatus - pauses the rotating status
+
     async def setup_hook(self):
         """Roxy's startup setup"""
         await self.db.init_db()
+
+        # Sessions left open by a crash/restart have no known end time - discard them
+        games, listens = await self.db.discard_unfinished_sessions()
+        if games or listens:
+            print(f"🧹 Discarded {games} unfinished gaming and {listens} unfinished listening sessions from last run")
+
         await self.load_extension('cogs.stats')
         await self.load_extension('cogs.admin')  # Load admin cog
         print("🤖 Roxy's cogs loaded successfully!")
@@ -47,27 +55,40 @@ roxy = RoxyBot()
 @roxy.event
 async def on_ready():
     """Roxy comes online!"""
-    roxy.start_time = time.time()  # Add this line for uptime tracking
-    
+    # on_ready also fires after reconnects - only record the first start for uptime
+    if not roxy.start_time:
+        roxy.start_time = time.time()
+
     print(f'🌟 {roxy.user} is now online and ready!')
     print(f'📊 Roxy is active in {len(roxy.guilds)} servers')
     print(f'👥 Watching over {len(roxy.users)} users')
-    
+
     # Find admin user (if needed for display purposes)
-    ADMIN_USER_ID = 526795891487670302  # Your Discord User ID
     admin_user = roxy.get_user(ADMIN_USER_ID)
     if admin_user:
         print(f'👑 Admin: {admin_user} ({ADMIN_USER_ID})')
     else:
         print(f'⚠️ Admin user {ADMIN_USER_ID} not found')
-    
-    # Roxy's startup status
-    activity = discord.Game(name="Starting up... 🤖")
-    await roxy.change_presence(status=discord.Status.online, activity=activity)
-    
-    # Start Roxy's background tasks
-    update_roxy_status.start()
-    
+
+    # Pick up everyone already playing/listening, and close sessions that ended while offline
+    synced = set()
+    for guild in roxy.guilds:
+        for member in guild.members:
+            if member.bot or member.id in synced:
+                continue
+            synced.add(member.id)
+            try:
+                await sync_member_activity(member)
+            except Exception as e:
+                print(f"❌ Error syncing activity for {member}: {e}")
+    print(f"🔄 Synced activity: {len(roxy.active_sessions)} gaming, {len(roxy.active_listening)} listening")
+
+    # Start Roxy's background tasks (already running after a reconnect)
+    if not update_roxy_status.is_running():
+        activity = discord.Game(name="Starting up... 🤖")
+        await roxy.change_presence(status=discord.Status.online, activity=activity)
+        update_roxy_status.start()
+
     print("✅ Roxy is fully operational!")
 
 @roxy.event
@@ -93,16 +114,12 @@ async def on_message(message):
         return
     
     try:
-        print(f"💬 Message from {message.author.display_name}: {message.content[:50]}...")
-        
         # Add user to Roxy's database
         await roxy.db.add_user(message.author.id, str(message.author), message.author.display_name)
-        print(f"✅ User added/updated: {message.author.display_name}")
-        
+
         # Update message count and check for level up
         new_level = await roxy.db.update_message_count(message.author.id)
-        print(f"📊 Message count updated for {message.author.display_name}, new level: {new_level}")
-        
+
         # Roxy celebrates level ups!
         if new_level > 0:
             embed = discord.Embed(
@@ -111,7 +128,6 @@ async def on_message(message):
                 color=discord.Color.gold()
             )
             await message.channel.send(embed=embed, delete_after=5)
-            print(f"🎉 Level up celebration sent for {message.author.display_name}!")
         
     except Exception as e:
         print(f"❌ Error in on_message: {e}")
@@ -121,121 +137,69 @@ async def on_message(message):
     # Process commands
     await roxy.process_commands(message)
 
+def get_current_activity(member):
+    """Read a member's current game and Spotify track from their presence"""
+    game = None
+    track = None
+    for activity in member.activities:
+        if activity.type == discord.ActivityType.playing and game is None:
+            game = activity.name
+        elif activity.type == discord.ActivityType.listening and track is None:
+            # Spotify listening activity
+            title = getattr(activity, 'title', None)
+            artist = getattr(activity, 'artist', None)
+            if title and artist:
+                track = {'song': title, 'artist': artist, 'album': getattr(activity, 'album', None)}
+    return game, track
+
+async def sync_member_activity(member):
+    """Bring Roxy's tracked sessions in line with a member's current presence.
+
+    Compares against Roxy's own state instead of the event's 'before', so the duplicate
+    presence events Discord sends (one per shared server) don't start or end sessions twice.
+    In-memory state is updated before any await so concurrent duplicate events see it.
+    """
+    user_id = member.id
+    game, track = get_current_activity(member)
+
+    # ==================== GAMING ====================
+    tracked_game = roxy.active_sessions.get(user_id)
+    if game != tracked_game:
+        if tracked_game:
+            del roxy.active_sessions[user_id]
+        if game:
+            roxy.active_sessions[user_id] = game
+
+        if tracked_game:
+            await roxy.db.end_game_session(user_id)
+        if game:
+            await roxy.db.add_user(member.id, str(member), member.display_name)
+            await roxy.db.start_game_session(user_id, game)
+
+    # ==================== MUSIC LISTENING ====================
+    tracked_track = roxy.active_listening.get(user_id)
+    current_key = (track['song'], track['artist']) if track else None
+    tracked_key = (tracked_track['song'], tracked_track['artist']) if tracked_track else None
+    if current_key != tracked_key:
+        if tracked_track:
+            del roxy.active_listening[user_id]
+        if track:
+            roxy.active_listening[user_id] = track
+
+        if tracked_track:
+            await roxy.db.end_listening_session(user_id)
+        if track:
+            await roxy.db.add_user(member.id, str(member), member.display_name)
+            await roxy.db.start_listening_session(user_id, track['song'], track['artist'], track['album'])
+
 @roxy.event
 async def on_presence_update(before, after):
     """Roxy tracks gaming activity and music listening"""
-    if before.bot or after.bot:
+    if after.bot:
         return
-    
-    # Skip if it's Roxy herself to avoid self-tracking
-    if roxy.user and after.id == roxy.user.id:
-        return
-    
+
     try:
-        user_id = after.id
-        
-        # Check for game status changes
-        before_game = None
-        after_game = None
-        
-        # Check for music listening changes
-        before_song = None
-        before_artist = None
-        after_song = None
-        after_artist = None
-        after_album = None
-        
-        if before.activities:
-            for activity in before.activities:
-                if activity.type == discord.ActivityType.playing:
-                    before_game = activity.name
-                elif activity.type == discord.ActivityType.listening:
-                    # Spotify listening activity
-                    if hasattr(activity, 'title') and hasattr(activity, 'artist'):
-                        before_song = activity.title
-                        before_artist = activity.artist
-        
-        if after.activities:
-            for activity in after.activities:
-                if activity.type == discord.ActivityType.playing:
-                    after_game = activity.name
-                elif activity.type == discord.ActivityType.listening:
-                    # Spotify listening activity
-                    if hasattr(activity, 'title') and hasattr(activity, 'artist'):
-                        after_song = activity.title
-                        after_artist = activity.artist
-                        after_album = getattr(activity, 'album', None)
-        
-        # ==================== HANDLE GAMING CHANGES ====================
-        if before_game != after_game:
-            # End previous gaming session
-            if before_game:
-                try:
-                    duration = await roxy.db.end_game_session(user_id)
-                    
-                    # Only remove from active_sessions if user is actually in it
-                    if user_id in roxy.active_sessions:
-                        del roxy.active_sessions[user_id]
-                    
-                    minutes = duration // 60
-                    seconds = duration % 60
-                    print(f"🎮 {after.display_name} finished playing {before_game} ({minutes}m {seconds}s)")
-                    
-                except Exception as e:
-                    print(f"❌ Error ending game session: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Start new gaming session
-            if after_game:
-                try:
-                    await roxy.db.start_game_session(user_id, after_game)
-                    roxy.active_sessions[user_id] = after_game
-                    print(f"🎮 {after.display_name} started playing {after_game}")
-                except Exception as e:
-                    print(f"❌ Error starting game session: {e}")
-                    import traceback
-                    traceback.print_exc()
-        
-        # ==================== HANDLE MUSIC LISTENING CHANGES ====================
-        # Check if listening status changed
-        before_listening = f"{before_song} by {before_artist}" if before_song and before_artist else None
-        after_listening = f"{after_song} by {after_artist}" if after_song and after_artist else None
-        
-        if before_listening != after_listening:
-            # End previous listening session
-            if before_listening:
-                try:
-                    duration = await roxy.db.end_listening_session(user_id)
-                    
-                    # Only remove from active_listening if user is actually in it
-                    if user_id in roxy.active_listening:
-                        del roxy.active_listening[user_id]
-                    
-                    minutes = duration // 60
-                    seconds = duration % 60
-                    print(f"🎵 {after.display_name} finished listening to {before_listening} ({minutes}m {seconds}s)")
-                    
-                except Exception as e:
-                    print(f"❌ Error ending listening session: {e}")
-                    import traceback
-                    traceback.print_exc()
-            
-            # Start new listening session
-            if after_listening and after_song and after_artist:
-                try:
-                    await roxy.db.start_listening_session(user_id, after_song, after_artist, after_album)
-                    roxy.active_listening[user_id] = {
-                        'song': after_song,
-                        'artist': after_artist,
-                        'album': after_album
-                    }
-                    print(f"🎵 {after.display_name} started listening to {after_listening}")
-                except Exception as e:
-                    print(f"❌ Error starting listening session: {e}")
-                    import traceback
-                    traceback.print_exc()
-                    
+        await sync_member_activity(after)
     except Exception as e:
         print(f"❌ Error in on_presence_update: {e}")
         import traceback
@@ -244,6 +208,10 @@ async def on_presence_update(before, after):
 @tasks.loop(minutes=3)
 async def update_roxy_status():
     """Roxy updates her status regularly"""
+    # An admin-set status (!r setstatus) stays until cleared
+    if roxy.custom_status:
+        return
+
     try:
         total_users = len(roxy.users)
         active_games = len(roxy.active_sessions)
@@ -296,8 +264,7 @@ async def ping(ctx):
     )
     
     # Show admin indicator if user is admin
-    ADMIN_USER_ID = 526795891487670302  # Your Discord User ID
-    if ctx.author.id == ADMIN_USER_ID:
+    if is_admin_id(ctx.author.id):
         embed.set_footer(text="👑 Administrator")
     
     await ctx.send(embed=embed)
@@ -323,8 +290,7 @@ async def bot_info(ctx):
     embed.add_field(name="🎵 Active Listeners", value=len(roxy.active_listening), inline=True)
     
     # Show admin info only if user is admin
-    ADMIN_USER_ID = 526795891487670302  # Your Discord User ID
-    if ctx.author.id == ADMIN_USER_ID:
+    if is_admin_id(ctx.author.id):
         embed.add_field(
             name="👑 Admin Commands",
             value="Use `!r admin` for admin controls",
@@ -461,13 +427,12 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="🔧 Debug Commands",
-        value="`!r debug` - Check your stats\n`!r testxp` - Test XP system\n`!r sessions` - View active sessions\n`!r refresh` - Fix stuck stats",
+        value="`!r debug` - Check your stats\n`!r sessions` - View active sessions\n`!r refresh` - Fix your stuck stats",
         inline=False
     )
     
     # Show admin section only if user is admin
-    ADMIN_USER_ID = 526795891487670302  # Your Discord User ID
-    if ctx.author.id == ADMIN_USER_ID:
+    if is_admin_id(ctx.author.id):
         embed.add_field(
             name="👑 Admin Commands",
             value="`!r admin` - Admin control panel\n*(Admin-only commands)*",
@@ -521,8 +486,7 @@ async def debug_user(ctx, member: discord.Member = None):
             )
             
             # Show raw data only to admin
-            ADMIN_USER_ID = 526795891487670302  # Your Discord User ID
-            if ctx.author.id == ADMIN_USER_ID:
+            if is_admin_id(ctx.author.id):
                 embed.add_field(
                     name="Raw Database Data",
                     value=f"```\nUser ID: {stats[0]}\nUsername: {stats[1] if len(stats) > 1 else 'N/A'}\nDisplay Name: {stats[2] if len(stats) > 2 else 'N/A'}\nJoin Date: {stats[3] if len(stats) > 3 else 'N/A'}\nLast Seen: {stats[7] if len(stats) > 7 else 'N/A'}\nStats Length: {len(stats)}\n```",
@@ -594,8 +558,9 @@ async def active_sessions(ctx):
     await ctx.send(embed=embed)
 
 @roxy.command(name='testxp')
+@is_admin()
 async def test_xp(ctx):
-    """Test XP system"""
+    """Test XP system (Admin only)"""
     try:
         # Add user and update message count
         await roxy.db.add_user(ctx.author.id, str(ctx.author), ctx.author.display_name)
@@ -642,7 +607,12 @@ async def refresh_stats(ctx, member: discord.Member = None):
     """Refresh user stats (fix stuck playtime/listening time)"""
     if member is None:
         member = ctx.author
-    
+
+    # Only the admin can refresh someone else's stats
+    if member.id != ctx.author.id and not is_admin_id(ctx.author.id):
+        await ctx.send("❌ You can only refresh your own stats. Use `!r refresh` without mentioning anyone.")
+        return
+
     try:
         # Refresh the user's stats
         total_playtime, total_listening_time = await roxy.db.force_refresh_user_stats(member.id)
@@ -678,6 +648,12 @@ async def on_command_error(ctx, error):
     elif isinstance(error, commands.CommandNotFound):
         # Ignore command not found errors
         pass
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(f"❌ Missing `{error.param.name}`. Usage: `!r {ctx.command.qualified_name} {ctx.command.signature}`")
+    elif isinstance(error, (commands.MemberNotFound, commands.ChannelNotFound)):
+        await ctx.send(f"❌ {error}")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send(f"❌ Invalid value. Usage: `!r {ctx.command.qualified_name} {ctx.command.signature}`")
     else:
         # Only log unexpected errors
         print(f"❌ Command error: {error}")

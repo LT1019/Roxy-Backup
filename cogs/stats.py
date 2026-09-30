@@ -1,6 +1,7 @@
 import discord
 from discord.ext import commands
 from database import RoxyDatabase
+from config import is_admin_id
 from datetime import datetime, timedelta
 import asyncio
 
@@ -99,10 +100,6 @@ class RoxyStats(commands.Cog):
             await ctx.send(embed=embed)
             return
         
-        # Debug: Print the length and content of stats to see what we're getting
-        print(f"🔍 Stats length: {len(stats)}")
-        print(f"🔍 Stats content: {stats}")
-        
         # Use indexed access instead of unpacking to avoid the "too many values" error
         user_id = stats[0]
         username = stats[1] if len(stats) > 1 else "Unknown"
@@ -119,7 +116,7 @@ class RoxyStats(commands.Cog):
         current_artist = stats[12] if len(stats) > 12 else None
         
         # Check if user is admin
-        is_admin = member.id == 526795891487670302
+        is_admin = is_admin_id(member.id)
         
         # Profile view data
         view_data = {
@@ -297,7 +294,16 @@ class RoxyStats(commands.Cog):
                     value=achievements,
                     inline=False
                 )
-            
+
+            # Achievements granted by the admin with !r ach give
+            special_achievements = await self.db.get_user_custom_achievements(member.id)
+            if special_achievements:
+                embed.add_field(
+                    name="🎖️ **Special Achievements**",
+                    value="\n".join(f"• {name}" for name, _ in special_achievements)[:1024],
+                    inline=False
+                )
+
             # === FOOTER ===
             if is_admin:
                 embed.set_footer(
@@ -1182,7 +1188,7 @@ class RoxyStats(commands.Cog):
                 name = member.display_name
                 
                 # Add crown for admin
-                if user_id == 526795891487670302:
+                if is_admin_id(user_id):
                     name = f"👑 {name}"
                 
                 # Format value based on category

@@ -5,21 +5,50 @@ import time
 import psutil
 from datetime import datetime, timedelta
 from database import RoxyDatabase
+from config import is_admin, is_admin_id
 
-# ROXY BOT ADMIN CONFIGURATION
-ADMIN_USER_ID = 526795891487670302  # Your Discord User ID
 
-# Admin check decorator - Silent for non-admins
-def is_admin():
-    """Check if user is Roxy's admin - No response for non-admins"""
-    async def predicate(ctx):
-        if ctx.author.id != ADMIN_USER_ID:
-            # Log admin command attempts by non-admins (for security)
-            print(f"🚫 Non-admin {ctx.author} ({ctx.author.id}) tried to use admin command: {ctx.command}")
-            # Completely ignore non-admin users - no response at all
+class OwnerOnlyView(discord.ui.View):
+    """A view whose buttons and menus only respond to one user"""
+
+    def __init__(self, owner_id: int, timeout: float = 300):
+        super().__init__(timeout=timeout)
+        self.owner_id = owner_id
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.owner_id:
+            await interaction.response.send_message("❌ This menu isn't yours - run the command yourself to get your own.", ephemeral=True)
             return False
         return True
-    return commands.check(predicate)
+
+
+class ConfirmView(OwnerOnlyView):
+    """Yes/No confirmation for destructive admin actions"""
+
+    def __init__(self, owner_id: int):
+        super().__init__(owner_id, timeout=30)
+        self.confirmed = False
+
+    @discord.ui.button(label='✅ Confirm', style=discord.ButtonStyle.danger)
+    async def confirm(self, interaction, button):
+        self.confirmed = True
+        await interaction.response.edit_message(view=None)
+        self.stop()
+
+    @discord.ui.button(label='❌ Cancel', style=discord.ButtonStyle.secondary)
+    async def cancel(self, interaction, button):
+        await interaction.response.edit_message(content="❌ Cancelled.", embed=None, view=None)
+        self.stop()
+
+
+async def confirm_action(ctx, prompt: str) -> bool:
+    """Ask the admin to confirm a destructive action; True if confirmed"""
+    view = ConfirmView(ctx.author.id)
+    message = await ctx.send(f"⚠️ {prompt}", view=view)
+    timed_out = await view.wait()
+    if timed_out:
+        await message.edit(content="⌛ Confirmation timed out.", view=None)
+    return view.confirmed
 
 class RoxyAdmin(commands.Cog):
     """Roxy's administrative commands and management system"""
@@ -48,7 +77,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="🏆 Achievement Management",
-            value="`!r ach` - Achievement control panel\n`!r giveach <@user> <achievement>` - Grant achievement\n`!r removeach <@user> <achievement>` - Remove achievement",
+            value="`!r ach` - Achievement control panel\n`!r ach users <achievement>` - Who has an achievement\n`!r giveach <@user> <achievement>` - Grant achievement\n`!r removeach <@user> <achievement>` - Remove achievement",
             inline=False
         )
         
@@ -60,13 +89,13 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="🤖 Bot Control",
-            value="`!r setstatus <message>` - Set bot status\n`!r announce <message>` - Send announcement\n`!r shutdown` - Shutdown bot\n`!r reload` - Reload cogs",
+            value="`!r setstatus <message>` - Set bot status (`clear` to resume rotation)\n`!r announce [#channel] <message>` - Send announcement\n`!r shutdown` - Shutdown bot\n`!r reload` - Reload cogs",
             inline=False
         )
         
         embed.add_field(
             name="🔧 Debug & Maintenance",
-            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - Clear all sessions\n`!r logs` - View recent logs",
+            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - End all active sessions\n`!r logs [limit]` - View recent logs (sent to your DMs)\n`!r testxp` - Test XP system",
             inline=False
         )
         
@@ -76,15 +105,19 @@ class RoxyAdmin(commands.Cog):
             inline=False
         )
         
-        embed.set_footer(text="👑 You are Roxy's Administrator | Commands are invisible to others")
+        embed.set_footer(text="👑 You are Roxy's Administrator | Admin commands are ignored for everyone else")
         
         await ctx.send(embed=embed)
 
     # Achievement Management Commands (unchanged from previous version)
+    # The group itself has no check so that `!r ach list` stays public;
+    # the control panel and the give/remove/users sub-commands are admin-only.
     @commands.group(name='ach', invoke_without_command=True)
-    @is_admin()
     async def achievement_admin(self, ctx):
         """Admin achievement management control panel"""
+        if not is_admin_id(ctx.author.id):
+            return
+
         embed = discord.Embed(
             title="🏆 Admin Achievement Control Panel",
             description="**Manage user achievements and rewards**",
@@ -113,9 +146,8 @@ class RoxyAdmin(commands.Cog):
         await ctx.send(embed=embed)
 
     @achievement_admin.command(name='list')
-    @is_admin()
     async def ach_list(self, ctx):
-        """Enhanced paginated achievement list with dropdown navigation"""
+        """Enhanced paginated achievement list with dropdown navigation (public)"""
         
         # Define all achievement categories with expanded lists
         achievement_categories = {
@@ -236,7 +268,7 @@ class RoxyAdmin(commands.Cog):
             
             # Add navigation info
             embed.set_footer(
-                text=f"👑 Page {category_index + 1} of {len(category_names)} • Use dropdown or arrows to navigate • Use !r ach give <@user> <achievement> to grant"
+                text=f"🏆 Page {category_index + 1} of {len(category_names)} • Use dropdown or arrows to navigate"
             )
             
             return embed
@@ -270,9 +302,9 @@ class RoxyAdmin(commands.Cog):
                 await interaction.response.edit_message(embed=embed, view=view)
         
         # Create view with dropdown and navigation buttons
-        class AchievementView(discord.ui.View):
+        class AchievementView(OwnerOnlyView):
             def __init__(self):
-                super().__init__(timeout=300)  # 5 minute timeout
+                super().__init__(ctx.author.id, timeout=300)  # Only the person who opened it can navigate
                 self.add_item(AchievementSelect())
             
             @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary)
@@ -345,7 +377,303 @@ class RoxyAdmin(commands.Cog):
         
         await ctx.send(embed=embed, view=view)
 
-    # (Other achievement commands remain the same - give, remove, users, etc.)
+    @achievement_admin.command(name='users')
+    @is_admin()
+    async def ach_users(self, ctx, *, achievement: str):
+        """See who has a granted achievement (Admin only)"""
+        holders = await self.db.get_achievement_holders(achievement)
+
+        embed = discord.Embed(
+            title=f"🏆 {achievement}",
+            color=discord.Color.gold()
+        )
+        if holders:
+            lines = []
+            for user_id, display_name, earned_date in holders:
+                name = display_name or f"User {user_id}"
+                earned = f"<t:{int(datetime.fromisoformat(earned_date).timestamp())}:d>" if earned_date else "unknown date"
+                lines.append(f"• **{name}** - {earned}")
+            embed.description = "\n".join(lines)[:4096]
+            embed.set_footer(text=f"{len(holders)} user(s) have this achievement")
+        else:
+            embed.description = "Nobody has this achievement yet. Names are case sensitive."
+
+        await ctx.send(embed=embed)
+
+    @achievement_admin.command(name='give')
+    @is_admin()
+    async def ach_give(self, ctx, member: discord.Member, *, achievement: str):
+        """Grant an achievement to a user (Admin only)"""
+        await self.db.add_user(member.id, str(member), member.display_name)
+        if await self.db.give_achievement(member.id, achievement):
+            await ctx.send(f"🏆 Granted **{achievement}** to {member.mention}!")
+        else:
+            await ctx.send(f"ℹ️ {member.display_name} already has **{achievement}**.")
+
+    @achievement_admin.command(name='remove')
+    @is_admin()
+    async def ach_remove(self, ctx, member: discord.Member, *, achievement: str):
+        """Remove an achievement from a user (Admin only)"""
+        if await self.db.remove_achievement(member.id, achievement):
+            await ctx.send(f"🗑️ Removed **{achievement}** from {member.display_name}.")
+        else:
+            await ctx.send(f"ℹ️ {member.display_name} doesn't have **{achievement}** (names are case sensitive).")
+
+    @commands.command(name='giveach')
+    @is_admin()
+    async def give_achievement_shortcut(self, ctx, member: discord.Member, *, achievement: str):
+        """Shortcut for !r ach give"""
+        await self.ach_give(ctx, member, achievement=achievement)
+
+    @commands.command(name='removeach')
+    @is_admin()
+    async def remove_achievement_shortcut(self, ctx, member: discord.Member, *, achievement: str):
+        """Shortcut for !r ach remove"""
+        await self.ach_remove(ctx, member, achievement=achievement)
+
+    # ==================== USER MANAGEMENT ====================
+
+    @commands.command(name='addxp')
+    @is_admin()
+    async def add_xp(self, ctx, member: discord.Member, amount: int):
+        """Give (or take, with a negative amount) XP (Admin only)"""
+        await self.db.add_user(member.id, str(member), member.display_name)
+        result = await self.db.add_xp(member.id, amount)
+        if result is None:
+            await ctx.send("❌ Couldn't update XP - check the console for details.")
+            return
+
+        new_xp, new_level = result
+        verb = "Gave" if amount >= 0 else "Took"
+        await ctx.send(f"✨ {verb} **{abs(amount):,} XP** {'to' if amount >= 0 else 'from'} {member.display_name} → **{new_xp:,} XP**, Level **{new_level}**")
+
+    @commands.command(name='setlevel')
+    @is_admin()
+    async def set_level(self, ctx, member: discord.Member, level: int):
+        """Set a user's level - XP is set to the minimum for that level (Admin only)"""
+        if level < 1:
+            await ctx.send("❌ Level must be 1 or higher.")
+            return
+
+        await self.db.add_user(member.id, str(member), member.display_name)
+        xp = self.db.get_xp_for_level(level)
+        await self.db.force_set_user_xp(member.id, xp, level)
+        await ctx.send(f"⭐ Set {member.display_name} to Level **{level}** ({xp:,} XP)")
+
+    @commands.command(name='resetuser')
+    @is_admin()
+    async def reset_user(self, ctx, member: discord.Member):
+        """Reset all of a user's stats, sessions and achievements (Admin only)"""
+        if not await confirm_action(ctx, f"Reset **all** stats, sessions and achievements for {member.display_name}? This can't be undone."):
+            return
+
+        await self.db.reset_user_stats(member.id)
+        self.bot.active_sessions.pop(member.id, None)
+        self.bot.active_listening.pop(member.id, None)
+        await ctx.send(f"🔄 Reset all stats for {member.display_name}.")
+
+    @commands.command(name='viewuser')
+    @is_admin()
+    async def view_user(self, ctx, member: discord.Member):
+        """View detailed user data (Admin only)"""
+        stats = await self.db.get_user_stats(member.id)
+        if not stats:
+            await ctx.send(f"❌ {member.display_name} isn't in the database yet.")
+            return
+
+        (user_id, username, display_name, join_date, total_messages, total_playtime,
+         current_game, last_seen, level, xp, total_listening_time, current_song, current_artist) = stats[:13]
+        session_stats = await self.db.get_session_statistics(member.id)
+        listening_stats = await self.db.get_listening_statistics(member.id)
+        custom_achievements = await self.db.get_user_custom_achievements(member.id)
+
+        def fmt_time(seconds):
+            return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+
+        def fmt_date(iso):
+            return f"<t:{int(datetime.fromisoformat(iso).timestamp())}:R>" if iso else "Never"
+
+        embed = discord.Embed(
+            title=f"🔍 User Data: {member.display_name}",
+            color=discord.Color.red()
+        )
+        embed.set_thumbnail(url=member.display_avatar.url)
+
+        embed.add_field(
+            name="🪪 Identity",
+            value=f"**ID:** {user_id}\n**Username:** {username}\n**First seen:** {fmt_date(join_date)}\n**Last seen:** {fmt_date(last_seen)}",
+            inline=False
+        )
+        embed.add_field(
+            name="📊 Progress",
+            value=f"**Level:** {level}\n**XP:** {xp:,}\n**Next level at:** {self.db.get_xp_for_level(level + 1):,} XP\n**Messages:** {total_messages:,}",
+            inline=True
+        )
+        embed.add_field(
+            name="🎮 Gaming",
+            value=f"**Total:** {fmt_time(total_playtime)}\n**Sessions:** {session_stats['total_sessions']}\n**Longest:** {session_stats['longest_session']}\n**Now:** {current_game or 'Nothing'}",
+            inline=True
+        )
+        embed.add_field(
+            name="🎵 Music",
+            value=f"**Total:** {fmt_time(total_listening_time)}\n**Sessions:** {listening_stats['total_sessions']}\n**Longest:** {listening_stats['longest_session']}\n**Now:** {f'{current_song} by {current_artist}' if current_song else 'Nothing'}",
+            inline=True
+        )
+        embed.add_field(
+            name="🎖️ Granted Achievements",
+            value="\n".join(f"• {name}" for name, _ in custom_achievements)[:1024] or "None",
+            inline=False
+        )
+
+        await ctx.send(embed=embed)
+
+    @commands.command(name='forceupdate')
+    @is_admin()
+    async def force_update(self, ctx, member: discord.Member):
+        """Recalculate a user's totals and level from their sessions (Admin only)"""
+        await self.db.add_user(member.id, str(member), member.display_name)
+        total_playtime, total_listening_time = await self.db.force_refresh_user_stats(member.id)
+        await ctx.send(
+            f"🔄 Updated {member.display_name}: **{total_playtime // 3600}h {(total_playtime % 3600) // 60}m** gaming, "
+            f"**{total_listening_time // 3600}h {(total_listening_time % 3600) // 60}m** listening"
+        )
+
+    # ==================== DATABASE MANAGEMENT ====================
+
+    @commands.command(name='dbstats')
+    @is_admin()
+    async def database_statistics(self, ctx):
+        """Database statistics (Admin only)"""
+        stats = await self.db.get_database_stats()
+        if not stats:
+            await ctx.send("❌ Couldn't load database statistics - check the console for details.")
+            return
+
+        import os
+        db_size_kb = os.path.getsize(self.db.db_path) // 1024 if os.path.exists(self.db.db_path) else 0
+
+        embed = discord.Embed(title="🗄️ Database Statistics", color=discord.Color.blue())
+        embed.add_field(
+            name="👥 Users",
+            value=f"**Tracked:** {stats['total_users']:,}\n**Active (7d):** {stats['active_users']:,}\n**Highest level:** {stats['highest_level']}\n**Average level:** {stats['avg_level']:.1f}",
+            inline=True
+        )
+        embed.add_field(
+            name="📈 Activity",
+            value=f"**Messages:** {stats['total_messages']:,}\n**Gaming:** {stats['total_playtime_hours']:,}h ({stats['total_sessions']:,} sessions)\n**Listening:** {stats['total_listening_hours']:,}h ({stats['total_listening_sessions']:,} sessions)",
+            inline=True
+        )
+        embed.add_field(name="💾 File", value=f"`{self.db.db_path}` - {db_size_kb:,} KB", inline=False)
+        await ctx.send(embed=embed)
+
+    @commands.command(name='cleanup')
+    @is_admin()
+    async def cleanup_users(self, ctx, days: int = 30):
+        """Remove users with no messages, gaming or listening who haven't been seen for X days (Admin only)"""
+        if days < 1:
+            await ctx.send("❌ Days must be 1 or more.")
+            return
+
+        if not await confirm_action(ctx, f"Delete users with **no activity at all** who haven't been seen in **{days} days**?"):
+            return
+
+        removed = await self.db.cleanup_inactive_users(days)
+        await ctx.send(f"🧹 Removed **{removed}** inactive user(s).")
+
+    @commands.command(name='backup')
+    @is_admin()
+    async def backup(self, ctx):
+        """Create a database backup (Admin only)"""
+        backup_path = await self.db.backup_database()
+        if backup_path:
+            await ctx.send(f"💾 Backup created: `{backup_path}`")
+        else:
+            await ctx.send("❌ Backup failed - check the console for details.")
+
+    # ==================== BOT CONTROL ====================
+
+    @commands.command(name='setstatus')
+    @is_admin()
+    async def set_status(self, ctx, *, message: str):
+        """Set Roxy's status; `clear` resumes the rotating status (Admin only)"""
+        if message.lower() == 'clear':
+            self.bot.custom_status = None
+            await self.bot.change_presence(activity=discord.Game(name="💜 Use !r help"))
+            await ctx.send("✅ Custom status cleared - rotating status resumes.")
+            return
+
+        self.bot.custom_status = message[:128]
+        await self.bot.change_presence(activity=discord.Game(name=self.bot.custom_status))
+        await ctx.send(f"✅ Status set to **{self.bot.custom_status}** (use `!r setstatus clear` to resume rotation)")
+
+    @commands.command(name='announce')
+    @is_admin()
+    async def announce(self, ctx, channel: discord.TextChannel = None, *, message: str):
+        """Send an announcement embed, optionally to another channel (Admin only)"""
+        target = channel or ctx.channel
+        embed = discord.Embed(
+            title="📢 Announcement",
+            description=message,
+            color=discord.Color.purple(),
+            timestamp=datetime.now()
+        )
+        embed.set_footer(text=f"From {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+
+        try:
+            await target.send(embed=embed)
+        except discord.Forbidden:
+            await ctx.send(f"❌ I don't have permission to send messages in {target.mention}.")
+            return
+
+        if target != ctx.channel:
+            await ctx.send(f"✅ Announcement sent to {target.mention}.")
+
+    @commands.command(name='reload')
+    @is_admin()
+    async def reload_cogs(self, ctx):
+        """Reload Roxy's cogs without restarting (Admin only)"""
+        results = []
+        for extension in ['cogs.stats', 'cogs.admin']:
+            try:
+                await self.bot.reload_extension(extension)
+                results.append(f"✅ `{extension}`")
+            except Exception as e:
+                results.append(f"❌ `{extension}`: {e}")
+        await ctx.send("🔄 Reload results:\n" + "\n".join(results))
+
+    @commands.command(name='shutdown')
+    @is_admin()
+    async def shutdown(self, ctx):
+        """Save active sessions and shut Roxy down (Admin only)"""
+        if not await confirm_action(ctx, "Shut Roxy down? You'll need to start her again manually."):
+            return
+
+        await ctx.send("👋 Saving active sessions and shutting down...")
+        await self.end_all_sessions()
+        await self.bot.close()
+
+    @commands.command(name='clearsessions')
+    @is_admin()
+    async def clear_sessions(self, ctx):
+        """End and save every active session (Admin only)"""
+        games, listens = await self.end_all_sessions()
+        await ctx.send(
+            f"🧹 Ended **{games}** gaming and **{listens}** listening session(s) - their time has been saved.\n"
+            "Anyone still playing or listening will be picked up again when their status next changes."
+        )
+
+    async def end_all_sessions(self):
+        """End every tracked session so its time and XP are credited"""
+        games = list(self.bot.active_sessions)
+        listens = list(self.bot.active_listening)
+        self.bot.active_sessions.clear()
+        self.bot.active_listening.clear()
+
+        for user_id in games:
+            await self.db.end_game_session(user_id)
+        for user_id in listens:
+            await self.db.end_listening_session(user_id)
+        return len(games), len(listens)
 
     # Advanced Admin Commands
     @commands.command(name='totalstats')
@@ -779,9 +1107,201 @@ class RoxyAdmin(commands.Cog):
             
             return embed, 1  # No pagination for active listening
         
-        # Include all other embed functions from the previous version (gaming sessions, active gaming, top levels)
-        # ... (keeping the code concise, these would be the same as before)
-        
+        async def create_gaming_sessions_embed(page=1):
+            """Create Recent Gaming Sessions embed with pagination"""
+            embed = discord.Embed(
+                title="🎮 Recent Gaming Sessions",
+                description="**Recently completed gaming sessions**",
+                color=0x9b59b6
+            )
+
+            offset = (page - 1) * limit
+            recent_sessions = []
+            total_count = 0
+            try:
+                async with aiosqlite.connect(self.db.db_path) as db:
+                    async with db.execute("""
+                        SELECT COUNT(*) FROM game_sessions WHERE end_time IS NOT NULL
+                    """) as cursor:
+                        result = await cursor.fetchone()
+                        total_count = result[0] if result else 0
+
+                    async with db.execute("""
+                        SELECT users.username, game_sessions.game_name, game_sessions.end_time, game_sessions.duration
+                        FROM game_sessions
+                        JOIN users ON game_sessions.user_id = users.user_id
+                        WHERE game_sessions.end_time IS NOT NULL
+                        ORDER BY game_sessions.end_time DESC
+                        LIMIT ? OFFSET ?
+                    """, (limit, offset)) as cursor:
+                        results = await cursor.fetchall()
+
+                    for username, game_name, end_time, duration in results:
+                        if end_time and duration:
+                            time_ago = f"<t:{int(datetime.fromisoformat(end_time).timestamp())}:R>"
+                            short_name = username[:12] + "..." if len(username) > 12 else username
+                            short_game = game_name[:25] + "..." if len(game_name) > 25 else game_name
+                            recent_sessions.append(f"• **{short_name}** played *{short_game}* ({duration // 3600}h {(duration % 3600) // 60}m) - {time_ago}")
+            except Exception as e:
+                recent_sessions = [f"❌ Error loading gaming data: {e}"]
+
+            total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+
+            embed.add_field(
+                name=f"🕹️ **Recent Gaming Sessions (Page {page}/{total_pages})**",
+                value=("\n".join(recent_sessions) or "No recent sessions")[:1024],
+                inline=False
+            )
+
+            try:
+                async with aiosqlite.connect(self.db.db_path) as db:
+                    yesterday = (datetime.now().timestamp() - 86400)
+                    async with db.execute("""
+                        SELECT COUNT(*), SUM(duration) FROM game_sessions
+                        WHERE datetime(end_time) > datetime(?, 'unixepoch') AND duration IS NOT NULL
+                    """, (yesterday,)) as cursor:
+                        result = await cursor.fetchone()
+                        sessions_24h = result[0] if result and result[0] else 0
+                        gaming_hours_24h = (result[1] // 3600) if result and result[1] else 0
+
+                    async with db.execute("""
+                        SELECT game_name, COUNT(*) FROM game_sessions
+                        WHERE datetime(end_time) > datetime(?, 'unixepoch') AND duration IS NOT NULL
+                        GROUP BY game_name ORDER BY COUNT(*) DESC LIMIT 1
+                    """, (yesterday,)) as cursor:
+                        top_game = await cursor.fetchone()
+
+                top_game_text = f"{top_game[0]} ({top_game[1]} sessions)" if top_game else "None"
+                embed.add_field(
+                    name="📊 **Gaming Summary**",
+                    value=f"🕐 **{sessions_24h}** sessions (24h)\n⏱️ **{gaming_hours_24h}h** played (24h)\n🔥 **Most played (24h):** {top_game_text}",
+                    inline=False
+                )
+            except Exception as e:
+                embed.add_field(name="📊 **Gaming Summary**", value=f"❌ Error loading summary: {e}", inline=False)
+
+            return embed, total_pages
+
+        async def create_active_gaming_embed(page=1):
+            """Create Currently Active Gaming embed (no pagination needed)"""
+            embed = discord.Embed(
+                title="🔴 Currently Active Gaming",
+                description="**Live gaming sessions in progress**",
+                color=0xe74c3c
+            )
+
+            active_sessions = getattr(self.bot, 'active_sessions', {})
+            session_details = []
+
+            try:
+                async with aiosqlite.connect(self.db.db_path) as db:
+                    for user_id, game in active_sessions.items():
+                        user = self.bot.get_user(user_id)
+                        if not user:
+                            continue
+                        short_name = user.name[:12] + "..." if len(user.name) > 12 else user.name
+                        short_game = game[:25] + "..." if len(game) > 25 else game
+
+                        async with db.execute("""
+                            SELECT start_time FROM game_sessions
+                            WHERE user_id = ? AND end_time IS NULL
+                            ORDER BY start_time DESC LIMIT 1
+                        """, (user_id,)) as cursor:
+                            result = await cursor.fetchone()
+
+                        if result:
+                            minutes = int((datetime.now() - datetime.fromisoformat(result[0])).total_seconds() // 60)
+                            session_details.append(f"• **{short_name}** - *{short_game}* ({minutes}m)")
+                        else:
+                            session_details.append(f"• **{short_name}** - *{short_game}* (just started)")
+            except Exception as e:
+                session_details = [f"❌ Error loading session times: {e}"]
+
+            embed.add_field(
+                name=f"🎮 **Active Sessions ({len(active_sessions)})**",
+                value=("\n".join(session_details[:15]) or "No active gaming sessions")[:1024],
+                inline=False
+            )
+
+            # Most popular games right now
+            game_counts = {}
+            for game in active_sessions.values():
+                game_counts[game] = game_counts.get(game, 0) + 1
+            popular_games = sorted(game_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+
+            embed.add_field(
+                name="📊 **Live Statistics**",
+                value=f"🎮 **{len(active_sessions)}** active gamers\n👥 **{len(self.bot.users)}** total users\n📈 **{len(active_sessions) / max(len(self.bot.users), 1) * 100:.1f}%** gaming rate",
+                inline=True
+            )
+            embed.add_field(
+                name="🏆 **Popular Games Now**",
+                value=("\n".join(f"• **{game[:25]}** ({count} playing)" for game, count in popular_games) or "No games currently active")[:1024],
+                inline=True
+            )
+
+            return embed, 1
+
+        async def create_top_levels_embed(page=1):
+            """Create Top Recent Levels embed with pagination"""
+            embed = discord.Embed(
+                title="⭐ Top Recent Levels",
+                description="**Highest level users and their recent activity**",
+                color=0xf1c40f
+            )
+
+            offset = (page - 1) * limit
+            entries = []
+            total_count = 0
+            try:
+                async with aiosqlite.connect(self.db.db_path) as db:
+                    async with db.execute("SELECT COUNT(*) FROM users WHERE xp > 0") as cursor:
+                        result = await cursor.fetchone()
+                        total_count = result[0] if result else 0
+
+                    async with db.execute("""
+                        SELECT username, level, xp, last_seen FROM users
+                        WHERE xp > 0
+                        ORDER BY xp DESC
+                        LIMIT ? OFFSET ?
+                    """, (limit, offset)) as cursor:
+                        results = await cursor.fetchall()
+
+                    for rank, (username, level, xp, last_seen) in enumerate(results, start=offset + 1):
+                        short_name = username[:15] + "..." if len(username) > 15 else username
+                        seen = f"<t:{int(datetime.fromisoformat(last_seen).timestamp())}:R>" if last_seen else "never"
+                        entries.append(f"**{rank}.** **{short_name}** - Lv.{level} ({xp:,} XP) - seen {seen}")
+            except Exception as e:
+                entries = [f"❌ Error loading level data: {e}"]
+
+            total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+
+            embed.add_field(
+                name=f"🏆 **Top Users by XP (Page {page}/{total_pages})**",
+                value=("\n".join(entries) or "No users with XP yet")[:1024],
+                inline=False
+            )
+
+            return embed, total_pages
+
+        category_builders = [
+            create_user_activity_embed,
+            create_gaming_sessions_embed,
+            create_listening_sessions_embed,
+            create_active_gaming_embed,
+            create_active_listening_embed,
+            create_top_levels_embed,
+        ]
+
+        async def build_category_embed(category, page):
+            """Build the embed for a log category and add the navigation footer"""
+            embed, total_pages = await category_builders[category](page)
+            embed.set_footer(
+                text=f"👑 Page {page} of {total_pages} • Category: {category_names[category]} • Limit: {limit} entries",
+                icon_url=ctx.author.display_avatar.url
+            )
+            return embed, total_pages
+
         # Create dropdown select menu for category navigation
         class LogsSelect(discord.ui.Select):
             def __init__(self):
@@ -807,36 +1327,17 @@ class RoxyAdmin(commands.Cog):
                 nonlocal current_category, current_page
                 current_category = int(self.values[0])
                 current_page = 1  # Reset to page 1 when changing category
-                
-                # Choose the appropriate embed function based on category
-                if current_category == 0:  # Recent User Activity
-                    embed, total_pages = await create_user_activity_embed(current_page)
-                elif current_category == 2:  # Recent Listening Sessions
-                    embed, total_pages = await create_listening_sessions_embed(current_page)
-                elif current_category == 4:  # Currently Active Listening
-                    embed, total_pages = await create_active_listening_embed(current_page)
-                else:
-                    # For other categories, create simple placeholder embeds
-                    embed = discord.Embed(
-                        title=f"{log_categories[category_names[current_category]]['emoji']} {category_names[current_category]}",
-                        description="This category is still being implemented.",
-                        color=log_categories[category_names[current_category]]['color']
-                    )
-                    total_pages = 1
-                
-                embed.set_footer(
-                    text=f"👑 Page {current_page} of {total_pages} • Category: {category_names[current_category]} • Limit: {limit} entries",
-                    icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url
-                )
-                
+
+                embed, total_pages = await build_category_embed(current_category, current_page)
+
                 # Update view with new pagination buttons if needed
                 view = LogsView(current_category, current_page, total_pages, self.view.admin_cog)
                 await interaction.response.edit_message(embed=embed, view=view)
         
         # Create view with dropdown and navigation buttons
-        class LogsView(discord.ui.View):
+        class LogsView(OwnerOnlyView):
             def __init__(self, category, page, total_pages, admin_cog):
-                super().__init__(timeout=300)  # 5 minute timeout
+                super().__init__(ctx.author.id, timeout=300)  # Admin only, 5 minute timeout
                 self.category = category
                 self.page = page
                 self.total_pages = total_pages
@@ -859,31 +1360,11 @@ class RoxyAdmin(commands.Cog):
                 
                 if new_page is not None:
                     current_page = new_page
-                
-                # Choose the appropriate embed function based on category
-                if current_category == 0:  # Recent User Activity
-                    embed, total_pages = await create_user_activity_embed(current_page)
-                elif current_category == 2:  # Recent Listening Sessions
-                    embed, total_pages = await create_listening_sessions_embed(current_page)
-                elif current_category == 4:  # Currently Active Listening
-                    embed, total_pages = await create_active_listening_embed(current_page)
-                else:
-                    # For other categories, create simple placeholder embeds
-                    embed = discord.Embed(
-                        title=f"{log_categories[category_names[current_category]]['emoji']} {category_names[current_category]}",
-                        description="This category is still being implemented.",
-                        color=log_categories[category_names[current_category]]['color']
-                    )
-                    total_pages = 1
-                
-                current_page = current_page  # Update the actual current page
-                
+
+                embed, total_pages = await build_category_embed(current_category, current_page)
+
                 # Create new view with updated state
                 view = LogsView(current_category, current_page, total_pages, self.admin_cog)
-                embed.set_footer(
-                    text=f"👑 Page {current_page} of {total_pages} • Category: {category_names[current_category]} • Limit: {limit} entries",
-                    icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url
-                )
                 await interaction.response.edit_message(embed=embed, view=view)
             
             async def on_timeout(self):
@@ -1022,15 +1503,20 @@ class RoxyAdmin(commands.Cog):
                     self.view.stop()
         
         # Create initial embed and view
-        embed, total_pages = await create_user_activity_embed(current_page)
-        embed.set_footer(
-            text=f"👑 Page {current_page} of {total_pages} • Category: {category_names[current_category]} • Limit: {limit} entries",
-            icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url
-        )
-        
+        embed, total_pages = await build_category_embed(current_category, current_page)
         view = LogsView(current_category, current_page, total_pages, self)
-        
-        await ctx.send(embed=embed, view=view)
+
+        # Logs contain everyone's activity - keep them out of public channels
+        if ctx.guild:
+            try:
+                await ctx.message.delete()
+            except (discord.Forbidden, discord.NotFound):
+                pass  # No Manage Messages permission - the command text stays, the logs don't
+
+        try:
+            await ctx.author.send(embed=embed, view=view)
+        except discord.Forbidden:
+            await ctx.send("❌ I couldn't DM you the logs - enable DMs from server members and try again.", delete_after=10)
 
 async def setup(bot):
     await bot.add_cog(RoxyAdmin(bot))

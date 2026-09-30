@@ -3,8 +3,13 @@ import discord
 from discord.ext import commands
 from database import RoxyDatabase, OPTED_OUT
 
-# Optional public link to the full policy (PRIVACY.md hosted somewhere) - shown as a button on rr privacy
-PRIVACY_URL = os.getenv('PRIVACY_URL', '').strip()
+# Optional public links to the full documents (PRIVACY.md / TERMS.md hosted somewhere) - shown as buttons on rr privacy
+DOCUMENT_LINKS = [
+    (label, url) for label, url in (
+        ('📄 Privacy Policy', os.getenv('PRIVACY_URL', '').strip()),
+        ('📜 Terms of Service', os.getenv('TERMS_URL', '').strip()),
+    ) if url.startswith('https://')
+]
 
 
 class ConfirmDelete(discord.ui.View):
@@ -79,9 +84,10 @@ class RoxyPrivacy(commands.Cog):
         embed.set_footer(text="Questions? Use the Support button under rr help")
 
         view = None
-        if PRIVACY_URL.startswith('https://'):
+        if DOCUMENT_LINKS:
             view = discord.ui.View()
-            view.add_item(discord.ui.Button(label='📄 Full Privacy Policy', url=PRIVACY_URL))
+            for label, url in DOCUMENT_LINKS:
+                view.add_item(discord.ui.Button(label=label, url=url))
         await ctx.send(embed=embed, view=view)
 
     @commands.command(name='mydata')

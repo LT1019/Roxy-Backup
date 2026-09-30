@@ -1259,4 +1259,15 @@ class RoxyDatabase:
 
         except Exception as e:
             print(f"❌ Error in get_achievement_holders: {e}")
-            return []
+            return []    
+    # ==================== EXPORT ====================
+    
+    async def export_tables(self) -> Dict[str, Tuple[List[str], List[Tuple]]]:
+        """Every table's column names and rows, for the admin Excel export"""
+        tables = {}
+        async with aiosqlite.connect(self.db_path) as db:
+            for table in ['users', 'game_sessions', 'listening_sessions', 'achievements', 'daily_stats']:
+                async with db.execute(f"SELECT * FROM {table}") as cursor:
+                    columns = [description[0] for description in cursor.description]
+                    tables[table] = (columns, await cursor.fetchall())
+        return tables

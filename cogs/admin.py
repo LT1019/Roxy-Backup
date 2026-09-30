@@ -1,6 +1,8 @@
 import discord
 from discord.ext import commands
 import aiosqlite
+import asyncio
+import io
 import time
 import psutil
 from datetime import datetime, timedelta
@@ -39,6 +41,102 @@ class ConfirmView(OwnerOnlyView):
     async def cancel(self, interaction, button):
         await interaction.response.edit_message(content="❌ Cancelled.", embed=None, view=None)
         self.stop()
+
+
+def build_excel_export(tables: dict, stats: dict) -> bytes:
+    """Build an .xlsx workbook: a Summary sheet plus one sheet per database table"""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+    from openpyxl.styles import Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="7B2FBE")  # Roxy purple
+
+    def write_sheet(ws, columns, rows):
+        ws.append(columns)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+
+        id_columns = {c for c, column in enumerate(columns, start=1) if column == 'user_id'}
+        for r, row in enumerate(rows, start=2):
+            for c, value in enumerate(row, start=1):
+                if c in id_columns and isinstance(value, int):
+                    value = str(value)  # Discord IDs have 18 digits - Excel numbers only keep 15
+                if isinstance(value, str):
+                    value = ILLEGAL_CHARACTERS_RE.sub("", value)  # Control characters in names would break the file
+                cell = ws.cell(row=r, column=c, value=value)
+                if isinstance(value, str):
+                    cell.data_type = 's'  # Always text - a name starting with "=" must never become a formula
+
+        ws.freeze_panes = "A2"
+        if rows:
+            ws.auto_filter.ref = ws.dimensions
+        for c, column in enumerate(columns, start=1):
+            longest = max([len(str(column))] + [len(str(row[c - 1])) for row in rows[:500] if row[c - 1] is not None])
+            ws.column_dimensions[get_column_letter(c)].width = min(longest + 2, 50)
+
+    workbook = Workbook()
+    summary = workbook.active
+    summary.title = "Summary"
+    summary_rows = [("Exported (UTC)", datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"))]
+    summary_rows += [(key.replace('_', ' ').title(), value) for key, value in stats.items()]
+    summary_rows += [(f"Rows: {name.replace('_', ' ').title()}", len(rows)) for name, (_, rows) in tables.items()]
+    write_sheet(summary, ["Statistic", "Value"], summary_rows)
+
+    for name, (columns, rows) in tables.items():
+        write_sheet(workbook.create_sheet(name.replace('_', ' ').title()[:31]), columns, rows)
+
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+class DbStatsView(OwnerOnlyView):
+    """!r dbstats buttons - only the admin can use them"""
+
+    def __init__(self, cog, owner_id: int):
+        super().__init__(owner_id, timeout=300)
+        self.cog = cog
+        self.message = None
+
+    @discord.ui.button(label='📥 Export Excel', style=discord.ButtonStyle.success)
+    async def export_excel(self, interaction, button):
+        # Only the admin sees the file - it contains everyone's data
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        try:
+            tables = await self.cog.db.export_tables()
+            stats = await self.cog.db.get_database_stats()
+            data = await asyncio.to_thread(build_excel_export, tables, stats)
+        except Exception as e:
+            print(f"❌ Error building Excel export: {e}")
+            await interaction.followup.send(f"❌ Couldn't build the export: {e}", ephemeral=True)
+            return
+
+        limit = interaction.guild.filesize_limit if interaction.guild else 10 * 1024 * 1024
+        if len(data) > limit:
+            await interaction.followup.send(
+                f"❌ The export is {len(data) / 1024 / 1024:.1f} MB - over Discord's {limit / 1024 / 1024:.0f} MB upload limit. Use `!r backup` instead.",
+                ephemeral=True
+            )
+            return
+
+        filename = f"roxy_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+        await interaction.followup.send(
+            content=f"📥 **Roxy database export** - {len(data) / 1024:,.0f} KB. Only you can see this file.",
+            file=discord.File(io.BytesIO(data), filename=filename),
+            ephemeral=True
+        )
+        print(f"👑 Admin {interaction.user} exported the database to Excel")
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except discord.HTTPException:
+                pass
 
 
 async def confirm_action(ctx, prompt: str) -> bool:
@@ -565,7 +663,10 @@ class RoxyAdmin(commands.Cog):
             inline=True
         )
         embed.add_field(name="💾 File", value=f"`{self.db.db_path}` - {db_size_kb:,} KB", inline=False)
-        await ctx.send(embed=embed)
+        embed.set_footer(text="👑 Export Excel sends the file privately - only you can see it")
+
+        view = DbStatsView(self, ctx.author.id)
+        view.message = await ctx.send(embed=embed, view=view)
 
     @commands.command(name='cleanup')
     @is_admin()

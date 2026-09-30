@@ -1,0 +1,11 @@
+{
+    "python.defaultInterpreterPath": "./roxy_env/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.formatting.provider": "black",
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "files.associations": {
+        "*.env": "dotenv"
+    },
+    "python.analysis.typeCheckingMode": "basic"
+}

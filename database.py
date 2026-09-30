@@ -136,7 +136,7 @@ class RoxyDatabase:
             import traceback
             traceback.print_exc()
     
-    async def update_message_count(self, user_id: int) -> int:
+    async def update_message_count(self, user_id: int, xp_multiplier: float = 1.0) -> int:
         """Update user's message count and XP with progressive leveling"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
@@ -151,7 +151,7 @@ class RoxyDatabase:
                     
                     # Add message and XP (5 XP per message)
                     new_messages = current_messages + 1
-                    new_xp = current_xp + 5
+                    new_xp = current_xp + round(5 * xp_multiplier)  # Patreon Fan/VIP get boosted XP
                     
                     # Calculate new level using progressive system
                     new_level = self.calculate_level_from_xp(new_xp)
@@ -229,7 +229,7 @@ class RoxyDatabase:
             import traceback
             traceback.print_exc()
     
-    async def end_game_session(self, user_id: int) -> int:
+    async def end_game_session(self, user_id: int, xp_multiplier: float = 1.0) -> int:
         """Roxy ends current game session and calculates duration"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
@@ -263,7 +263,7 @@ class RoxyDatabase:
                         """, (end_dt.isoformat(), duration, session_id))
                         
                         # Add XP for gaming (1 XP per minute, minimum 1 XP)
-                        xp_gained = max(1, duration // 60)
+                        xp_gained = max(1, round((duration // 60) * xp_multiplier))
                         
                         # Get current playtime and XP before updating
                         async with db.execute("""
@@ -340,7 +340,7 @@ class RoxyDatabase:
             import traceback
             traceback.print_exc()
     
-    async def end_listening_session(self, user_id: int) -> int:
+    async def end_listening_session(self, user_id: int, xp_multiplier: float = 1.0) -> int:
         """Roxy ends current listening session and calculates duration"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
@@ -374,7 +374,7 @@ class RoxyDatabase:
                         """, (end_dt.isoformat(), duration, session_id))
                         
                         # Add XP for listening (1 XP per 2 minutes, minimum 1 XP)
-                        xp_gained = max(1, duration // 120)
+                        xp_gained = max(1, round((duration // 120) * xp_multiplier))
                         
                         # Get current listening time and XP before updating
                         async with db.execute("""

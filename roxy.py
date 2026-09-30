@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
 from config import ADMIN_USER_ID, DONATE_LINKS, is_admin, is_admin_id
+from patreon import xp_multiplier, get_patrons, get_patron_tier
 
 # Load Roxy's configuration
 load_dotenv()
@@ -134,7 +135,7 @@ async def on_message(message):
         await roxy.db.add_user(message.author.id, str(message.author), message.author.display_name)
 
         # Update message count and check for level up
-        new_level = await roxy.db.update_message_count(message.author.id)
+        new_level = await roxy.db.update_message_count(message.author.id, xp_multiplier(roxy, message.author.id))
 
         # Roxy celebrates level ups!
         if new_level > 0:
@@ -187,7 +188,7 @@ async def sync_member_activity(member):
             roxy.active_sessions[user_id] = game
 
         if tracked_game:
-            await roxy.db.end_game_session(user_id)
+            await roxy.db.end_game_session(user_id, xp_multiplier(roxy, user_id))
         if game:
             await roxy.db.add_user(member.id, str(member), member.display_name)
             await roxy.db.start_game_session(user_id, game)
@@ -203,7 +204,7 @@ async def sync_member_activity(member):
             roxy.active_listening[user_id] = track
 
         if tracked_track:
-            await roxy.db.end_listening_session(user_id)
+            await roxy.db.end_listening_session(user_id, xp_multiplier(roxy, user_id))
         if track:
             await roxy.db.add_user(member.id, str(member), member.display_name)
             await roxy.db.start_listening_session(user_id, track['song'], track['artist'], track['album'])
@@ -304,6 +305,16 @@ async def bot_info(ctx):
     embed.add_field(name="👥 Users", value=len(roxy.users), inline=True)
     embed.add_field(name="🎮 Active Gamers", value=len(roxy.active_sessions), inline=True)
     embed.add_field(name="🎵 Active Listeners", value=len(roxy.active_listening), inline=True)
+
+    # Patreon credits - everyone with a Supporter/Fan/VIP role in Roxy's server
+    patrons = get_patrons(roxy)
+    if patrons:
+        credits = ", ".join(f"{tier['emoji']} {member.display_name}" for member, tier in patrons)
+        if len(credits) > 1000:
+            credits = credits[:1000].rsplit(", ", 1)[0] + f" … and more!"
+        embed.add_field(name=f"💜 Patreon Supporters ({len(patrons)})", value=credits, inline=False)
+    else:
+        embed.add_field(name="💜 Patreon Supporters", value="Be the first! Find the Patreon button under `rr help`.", inline=False)
     
     # Show admin info only if user is admin
     if is_admin_id(ctx.author.id):

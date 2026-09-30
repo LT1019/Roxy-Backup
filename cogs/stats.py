@@ -3,6 +3,7 @@ from discord.ext import commands
 from database import RoxyDatabase
 from config import is_admin_id
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
+from patreon import get_patron_tier
 from datetime import datetime, timedelta
 import asyncio
 import re
@@ -305,6 +306,14 @@ class RoxyStats(commands.Cog):
                     value="\n".join(f"• {name}" for name, _ in special_achievements)[:1024],
                     inline=False
                 )
+
+            # Patreon supporter badges (and the VIP title)
+            patron_tier = get_patron_tier(self.bot, member.id)
+            if patron_tier:
+                badge_text = " • ".join(patron_tier['badges'])
+                if patron_tier['title']:
+                    badge_text = f"**{patron_tier['title']}**\n{badge_text}"
+                embed.add_field(name="💜 **Patreon Supporter**", value=badge_text, inline=False)
 
             # === FOOTER ===
             if is_admin:

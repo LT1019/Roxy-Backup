@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from database import RoxyDatabase
 from config import is_admin, is_admin_id
 from info_embeds import server_overview_embed
+from patreon import xp_multiplier
 
 
 class OwnerOnlyView(discord.ui.View):
@@ -818,9 +819,9 @@ class RoxyAdmin(commands.Cog):
         self.bot.active_listening.clear()
 
         for user_id in games:
-            await self.db.end_game_session(user_id)
+            await self.db.end_game_session(user_id, xp_multiplier(self.bot, user_id))
         for user_id in listens:
-            await self.db.end_listening_session(user_id)
+            await self.db.end_listening_session(user_id, xp_multiplier(self.bot, user_id))
         return len(games), len(listens)
 
     # Advanced Admin Commands

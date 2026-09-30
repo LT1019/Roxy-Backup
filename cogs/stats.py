@@ -696,7 +696,7 @@ class RoxyStats(commands.Cog):
             
             embed.add_field(
                 name=f"All Games Ranked by Playtime (Page {page}/{total_pages})",
-                value=games_text.strip(),
+                value=self.fit_field(games_text.strip()),
                 inline=False
             )
             
@@ -772,7 +772,7 @@ class RoxyStats(commands.Cog):
             
             embed.add_field(
                 name=f"Recent Gaming Sessions (Page {page}/{total_pages})",
-                value=history_text.strip(),
+                value=self.fit_field(history_text.strip()),
                 inline=False
             )
             
@@ -847,7 +847,7 @@ class RoxyStats(commands.Cog):
             
             embed.add_field(
                 name=f"All Artists Ranked by Listening Time (Page {page}/{total_pages})",
-                value=artists_text.strip(),
+                value=self.fit_field(artists_text.strip()),
                 inline=False
             )
             
@@ -922,7 +922,7 @@ class RoxyStats(commands.Cog):
             
             embed.add_field(
                 name=f"All Songs Ranked by Listening Time (Page {page}/{total_pages})",
-                value=songs_text.strip(),
+                value=self.fit_field(songs_text.strip()),
                 inline=False
             )
             
@@ -999,7 +999,7 @@ class RoxyStats(commands.Cog):
             
             embed.add_field(
                 name=f"Recent Listening Sessions (Page {page}/{total_pages})",
-                value=history_text.strip(),
+                value=self.fit_field(history_text.strip()),
                 inline=False
             )
             
@@ -1315,6 +1315,18 @@ class RoxyStats(commands.Cog):
         embed = await create_leaderboard_embed()
         view = LeaderboardView()
         view.message = await ctx.send(embed=embed, view=view)
+
+    def fit_field(self, text, limit=1024):
+        """Trim a multi-line embed field to Discord's limit, cutting at a whole line"""
+        if len(text) <= limit:
+            return text
+        suffix = "\n*…more entries hidden (names too long)*"
+        kept = ""
+        for line in text.split("\n"):
+            if len(kept) + len(line) + 1 + len(suffix) > limit:
+                break
+            kept += line + "\n"
+        return (kept.rstrip("\n") + suffix)[:limit]
 
     def get_xp_for_level(self, level):
         """Calculate total XP needed to reach a specific level"""

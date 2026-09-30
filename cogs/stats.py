@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 from database import RoxyDatabase
 from config import is_admin_id
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
@@ -15,9 +16,11 @@ class RoxyStats(commands.Cog):
         self.bot = bot
         self.db = RoxyDatabase()
     
-    @commands.command(name='profile', aliases=['p', 'stats'])
+    @commands.hybrid_command(name='profile', aliases=['p', 'stats'], description="Roxy profile: level, XP, gaming and music stats")
+    @app_commands.describe(member="Whose profile to show (default: you)")
     async def user_profile(self, ctx, member: discord.Member = None):
         """Display comprehensive user profile with navigation"""
+        await ctx.defer()  # Slash commands must answer within 3 seconds - this buys time
         if member is None:
             member = ctx.author
         
@@ -1338,10 +1341,13 @@ class RoxyStats(commands.Cog):
             embed.set_footer(text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
         await ctx.send(embed=embed)
 
-    @commands.command(name='profileinfo', aliases=['userprofile', 'userinfo', 'whois'])
+    @commands.hybrid_command(name='userinfo', aliases=['profileinfo', 'userprofile', 'whois'], description="Discord profile info: Server and Global views")
+    @app_commands.describe(member="Whose Discord profile to show (default: you)")
+    @app_commands.guild_only()
     @commands.guild_only()
     async def profile_info(self, ctx, member: discord.Member = None):
         """Discord profile information for you or a member of this server - Server and Global views"""
+        await ctx.defer()  # Slash commands must answer within 3 seconds - this buys time
         member = member or ctx.author
         try:
             # Raw API data: banner and accent color, plus nameplate/name style/tag that discord.py 2.5 doesn't parse
@@ -1391,7 +1397,7 @@ class RoxyStats(commands.Cog):
 
             async def interaction_check(self, interaction):
                 if interaction.user.id != ctx.author.id:
-                    await interaction.response.send_message("❌ This menu isn't yours - use `rr profileinfo` to get your own.", ephemeral=True)
+                    await interaction.response.send_message("❌ This menu isn't yours - use `rr userinfo` to get your own.", ephemeral=True)
                     return False
                 return True
 

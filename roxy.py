@@ -10,7 +10,7 @@ import psutil
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
-from config import ADMIN_USER_ID, DONATE_LINKS, is_admin, is_admin_id
+from config import ADMIN_USER_ID, LINK_BUTTONS, is_admin, is_admin_id
 from patreon import xp_multiplier, get_patrons, get_patron_tier
 
 # Load Roxy's configuration
@@ -330,15 +330,15 @@ async def bot_info(ctx):
     if roxy.user:
         embed.set_thumbnail(url=roxy.user.avatar.url if roxy.user.avatar else roxy.user.default_avatar.url)
     
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, view=link_buttons_view())
 
-def donate_view():
-    """Link buttons to the donation pages set in .env (KOFI_URL, PATREON_URL) - None if none are set"""
-    if not DONATE_LINKS:
+def link_buttons_view():
+    """Link buttons (Patreon, Roxy server, ...) set in .env - None if none are set"""
+    if not LINK_BUTTONS:
         return None
     view = discord.ui.View()
-    for label, url in DONATE_LINKS:
-        view.add_item(discord.ui.Button(label=f"{label} - Support Roxy", url=url))
+    for label, url in LINK_BUTTONS:
+        view.add_item(discord.ui.Button(label=label, url=url))
     return view
 
 @roxy.command(name='help')
@@ -384,7 +384,7 @@ async def help_command(ctx, *, command=None):
         
         embed.set_footer(text="💜 Use rr help for all commands • Roxy tracks your gaming automatically!")
         
-        await ctx.send(embed=embed, view=donate_view())
+        await ctx.send(embed=embed, view=link_buttons_view())
         return
     
     elif command and command.lower() == 'music':
@@ -427,7 +427,7 @@ async def help_command(ctx, *, command=None):
         
         embed.set_footer(text="💜 Use rr help for all commands • Roxy tracks your Spotify automatically!")
         
-        await ctx.send(embed=embed, view=donate_view())
+        await ctx.send(embed=embed, view=link_buttons_view())
         return
     
     # Regular help menu
@@ -439,7 +439,7 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="📊 Profile Commands",
-        value="`rr profile / p [@user]` - View profile\n`rr level [@user]` - Check level & XP\n`rr games [@user]` - Gaming analytics & achievements\n`rr music [@user]` - Music listening analytics",
+        value="`rr profile / p [@user]` or `/profile` - View profile\n`rr level [@user]` - Check level & XP\n`rr games [@user]` - Gaming analytics & achievements\n`rr music [@user]` - Music listening analytics",
         inline=False
     )
     
@@ -457,7 +457,7 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="ℹ️ Info Commands",
-        value="`rr serverinfo` - This server's Discord info\n`rr profileinfo [@user]` - Discord profile (Server / Global)",
+        value="`rr serverinfo` - This server's Discord info\n`rr userinfo [@user]` or `/userinfo` - Discord profile (Server / Global)",
         inline=False
     )
 
@@ -484,7 +484,7 @@ async def help_command(ctx, *, command=None):
     else:
         embed.set_footer(text="💡 Prefix: rr (e.g. rr help)")
     
-    await ctx.send(embed=embed, view=donate_view())
+    await ctx.send(embed=embed, view=link_buttons_view())
 
 # Debug commands (Available to everyone)
 @roxy.command(name='debug')
@@ -716,7 +716,9 @@ async def on_command_error(ctx, error):
     if isinstance(error, commands.HybridCommandError):
         error = error.original  # Errors from the slash-command side of hybrid commands
 
-    if ctx.interaction is not None and isinstance(error, (commands.CheckFailure, app_commands.CheckFailure)):
+    if isinstance(error, commands.NoPrivateMessage):
+        await ctx.send("❌ This command only works in a server.", ephemeral=True)
+    elif ctx.interaction is not None and isinstance(error, (commands.CheckFailure, app_commands.CheckFailure)):
         # A slash command must always get a reply, or Discord shows "The application did not respond"
         if not ctx.interaction.response.is_done():
             await ctx.interaction.response.send_message("❌ This command is for Roxy's admin only.", ephemeral=True)

@@ -7,11 +7,12 @@ load_dotenv()
 # Roxy's administrator - set ADMIN_USER_ID in .env to override
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '526795891487670302'))
 
-# Donation pages shown as buttons under rr help - leave unset to hide a button
-DONATE_LINKS = [
+# Link buttons shown under rr help and rr info - leave a value unset in .env to hide its button
+LINK_BUTTONS = [
     (label, url) for label, url in (
-        ('☕ Ko-fi', os.getenv('KOFI_URL', '').strip()),
-        ('💖 Patreon', os.getenv('PATREON_URL', '').strip()),
+        ('☕ Ko-fi - Support Roxy', os.getenv('KOFI_URL', '').strip()),
+        ('💖 Patreon - Support Roxy', os.getenv('PATREON_URL', '').strip()),
+        ('💬 Roxy Server', os.getenv('SUPPORT_SERVER_URL', '').strip()),
     ) if url.startswith('https://')
 ]
 

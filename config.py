@@ -12,7 +12,7 @@ LINK_BUTTONS = [
     (label, url) for label, url in (
         ('☕ Ko-fi - Support Roxy', os.getenv('KOFI_URL', '').strip()),
         ('💖 Patreon - Support Roxy', os.getenv('PATREON_URL', '').strip()),
-        ('💬 Roxy Server', os.getenv('SUPPORT_SERVER_URL', '').strip()),
+        ('💬 Support', os.getenv('SUPPORT_SERVER_URL', '').strip()),
     ) if url.startswith('https://')
 ]
 

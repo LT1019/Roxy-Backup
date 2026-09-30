@@ -4,6 +4,7 @@ from database import RoxyDatabase
 from config import is_admin_id
 from datetime import datetime, timedelta
 import asyncio
+import re
 
 class RoxyStats(commands.Cog):
     """Roxy's statistics and analytics system"""
@@ -1317,9 +1318,23 @@ class RoxyStats(commands.Cog):
         view.message = await ctx.send(embed=embed, view=view)
 
     def fit_field(self, text, limit=1024):
-        """Trim a multi-line embed field to Discord's limit, cutting at a whole line"""
+        """Fit a list field into Discord's limit by shortening names (bold titles, italic artists,
+        albums) just enough - every entry stays visible. Hiding entries is only a last resort."""
         if len(text) <= limit:
             return text
+
+        def shorten(name, max_len):
+            return name if len(name) <= max_len else name[:max_len - 1].rstrip() + "…"
+
+        for max_len in range(60, 5, -2):
+            fitted = re.sub(r'\*\*(.+?)\*\*', lambda m: f"**{shorten(m.group(1), max_len)}**", text)
+            fitted = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', lambda m: f"*{shorten(m.group(1), max_len)}*", fitted)
+            # Album names in the listening history: "*Artist* (Album) - "
+            fitted = re.sub(r'(\*[^*\n]+\* \()([^)\n]+)(\) - )', lambda m: m.group(1) + shorten(m.group(2), max_len) + m.group(3), fitted)
+            if len(fitted) <= limit:
+                return fitted
+
+        # Still too long even with short names - cut at a whole line
         suffix = "\n*…more entries hidden (names too long)*"
         kept = ""
         for line in text.split("\n"):

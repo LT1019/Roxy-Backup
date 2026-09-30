@@ -296,7 +296,7 @@ class RoxyStats(commands.Cog):
                     inline=False
                 )
 
-            # Achievements granted by the admin with !r ach give
+            # Achievements granted by the admin with rr ach give
             special_achievements = await self.db.get_user_custom_achievements(member.id)
             if special_achievements:
                 embed.add_field(
@@ -1294,7 +1294,7 @@ class RoxyStats(commands.Cog):
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="🏆 Leaderboard Closed",
-                        description="Use `!r top` to open again.",
+                        description="Use `rr top` to open again.",
                         color=discord.Color.red()
                     ),
                     view=None
@@ -1303,7 +1303,7 @@ class RoxyStats(commands.Cog):
             async def interaction_check(self, interaction):
                 # Only the person who ran the command can use their leaderboard menu
                 if interaction.user.id != ctx.author.id:
-                    await interaction.response.send_message("❌ This menu isn't yours - use `!r top` to get your own.", ephemeral=True)
+                    await interaction.response.send_message("❌ This menu isn't yours - use `rr top` to get your own.", ephemeral=True)
                     return False
                 return True
 

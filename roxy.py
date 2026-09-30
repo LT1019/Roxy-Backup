@@ -21,12 +21,20 @@ intents.message_content = True
 intents.members = True
 intents.presences = True
 
+def get_prefix(bot, message):
+    """Roxy's prefix is "rr" - "rr help" or "rrhelp", any capitalization (phones auto-capitalize "Rr")"""
+    for prefix in ('rr ', 'rr'):
+        if message.content[:len(prefix)].lower() == prefix:
+            return message.content[:len(prefix)]  # Exact text as typed, so it always matches
+    return 'rr '
+
 class RoxyBot(commands.Bot):
     """Roxy - Your friendly Discord stats bot"""
     
     def __init__(self):
         super().__init__(
-            command_prefix=['!r ', '!'],
+            command_prefix=get_prefix,
+            case_insensitive=True,
             intents=intents,
             help_command=None
         )
@@ -34,7 +42,7 @@ class RoxyBot(commands.Bot):
         self.active_sessions = {}  # Gaming sessions
         self.active_listening = {}  # Music listening sessions
         self.start_time: float = 0.0  # Add start_time attribute with type hint
-        self.custom_status = None  # Set by !r setstatus - pauses the rotating status
+        self.custom_status = None  # Set by rr setstatus - pauses the rotating status
 
     async def setup_hook(self):
         """Roxy's startup setup"""
@@ -109,7 +117,7 @@ async def on_member_join(member):
     if member.guild.system_channel:
         embed = discord.Embed(
             title="🎉 Welcome to the server!",
-            description=f"Hey {member.mention}! I'm **Roxy**, your friendly stats bot. Use `!r help` to see what I can do!",
+            description=f"Hey {member.mention}! I'm **Roxy**, your friendly stats bot. Use `rr help` to see what I can do!",
             color=discord.Color.purple()
         )
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
@@ -216,7 +224,7 @@ async def on_presence_update(before, after):
 @tasks.loop(minutes=3)
 async def update_roxy_status():
     """Roxy updates her status regularly"""
-    # An admin-set status (!r setstatus) stays until cleared
+    # An admin-set status (rr setstatus) stays until cleared
     if roxy.custom_status:
         return
 
@@ -231,7 +239,7 @@ async def update_roxy_status():
             f"🎮 Tracking {active_games} gamers",
             f"🎵 Tracking {active_listeners} listeners",
             "📊 Crunching stats...",
-            "💜 Use !r help",
+            "💜 Use rr help",
             f"🏠 Active in {len(roxy.guilds)} servers",
             "🤖 Roxy at your service!",
             "📈 Analyzing activity patterns",
@@ -301,12 +309,12 @@ async def bot_info(ctx):
     if is_admin_id(ctx.author.id):
         embed.add_field(
             name="👑 Admin Commands",
-            value="Use `!r admin` for admin controls",
+            value="Use `rr admin` for admin controls",
             inline=False
         )
         embed.set_footer(text="Made with ❤️ using discord.py | You are Roxy's Administrator")
     else:
-        embed.set_footer(text="Made with ❤️ using discord.py | Use !r help for commands")
+        embed.set_footer(text="Made with ❤️ using discord.py | Use rr help for commands")
     
     if roxy.user:
         embed.set_thumbnail(url=roxy.user.avatar.url if roxy.user.avatar else roxy.user.default_avatar.url)
@@ -326,13 +334,13 @@ async def help_command(ctx, *, command=None):
         
         embed.add_field(
             name="📊 **Main Gaming Command**",
-            value="`!r games [@user]` - Show gaming overview, top 3 favorites, latest 5 sessions, achievements",
+            value="`rr games [@user]` - Show gaming overview, top 3 favorites, latest 5 sessions, achievements",
             inline=False
         )
         
         embed.add_field(
             name="🎮 **Games Sub-Commands**",
-            value="`!r games list [@user]` - Show all favorite games ranked by playtime\n`!r games history [@user]` - Show complete gaming history chronologically",
+            value="`rr games list [@user]` - Show all favorite games ranked by playtime\n`rr games history [@user]` - Show complete gaming history chronologically",
             inline=False
         )
         
@@ -350,11 +358,11 @@ async def help_command(ctx, *, command=None):
         
         embed.add_field(
             name="💡 **Tips**",
-            value="• Your Discord status must show 'Playing [Game]' to be tracked\n• Sessions are automatically detected when you start/stop games\n• All historical data is preserved and analyzed\n• Use `!r refresh` if playtime seems stuck",
+            value="• Your Discord status must show 'Playing [Game]' to be tracked\n• Sessions are automatically detected when you start/stop games\n• All historical data is preserved and analyzed\n• Use `rr refresh` if playtime seems stuck",
             inline=False
         )
         
-        embed.set_footer(text="💜 Use !r help for all commands • Roxy tracks your gaming automatically!")
+        embed.set_footer(text="💜 Use rr help for all commands • Roxy tracks your gaming automatically!")
         
         await ctx.send(embed=embed)
         return
@@ -369,13 +377,13 @@ async def help_command(ctx, *, command=None):
         
         embed.add_field(
             name="📊 **Main Music Command**",
-            value="`!r music [@user]` - Show listening overview, top 3 artists, latest 5 tracks, achievements",
+            value="`rr music [@user]` - Show listening overview, top 3 artists, latest 5 tracks, achievements",
             inline=False
         )
         
         embed.add_field(
             name="🎵 **Music Sub-Commands**",
-            value="`!r music artists [@user]` - Show all favorite artists ranked by listening time\n`!r music history [@user]` - Show complete listening history chronologically\n`!r music songs [@user]` - Show favorite songs ranked by listening time",
+            value="`rr music artists [@user]` - Show all favorite artists ranked by listening time\n`rr music history [@user]` - Show complete listening history chronologically\n`rr music songs [@user]` - Show favorite songs ranked by listening time",
             inline=False
         )
         
@@ -393,11 +401,11 @@ async def help_command(ctx, *, command=None):
         
         embed.add_field(
             name="💡 **Tips**",
-            value="• Must be listening to Spotify for tracking to work\n• Sessions are automatically detected when you start/stop listening\n• All historical data is preserved and analyzed\n• Use `!r refresh` if listening time seems stuck",
+            value="• Must be listening to Spotify for tracking to work\n• Sessions are automatically detected when you start/stop listening\n• All historical data is preserved and analyzed\n• Use `rr refresh` if listening time seems stuck",
             inline=False
         )
         
-        embed.set_footer(text="💜 Use !r help for all commands • Roxy tracks your Spotify automatically!")
+        embed.set_footer(text="💜 Use rr help for all commands • Roxy tracks your Spotify automatically!")
         
         await ctx.send(embed=embed)
         return
@@ -411,31 +419,31 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="📊 Profile Commands",
-        value="`!r profile / p [@user]` - View profile\n`!r level [@user]` - Check level & XP\n`!r games [@user]` - Gaming analytics & achievements\n`!r music [@user]` - Music listening analytics",
+        value="`rr profile / p [@user]` - View profile\n`rr level [@user]` - Check level & XP\n`rr games [@user]` - Gaming analytics & achievements\n`rr music [@user]` - Music listening analytics",
         inline=False
     )
     
     embed.add_field(
         name="🏆 Leaderboards",
-        value="`!r top messages` - Message leaderboard\n`!r top playtime` - Gaming leaderboard\n`!r top listening` - Music listening leaderboard\n`!r top level` - Level rankings",
+        value="`rr top messages` - Message leaderboard\n`rr top playtime` - Gaming leaderboard\n`rr top listening` - Music listening leaderboard\n`rr top level` - Level rankings",
         inline=False
     )
     
     embed.add_field(
         name="🎮🎵 Activity Commands",
-        value="`!r help games` - Gaming commands help\n`!r help music` - Music commands help",
+        value="`rr help games` - Gaming commands help\n`rr help music` - Music commands help",
         inline=False
     )
     
     embed.add_field(
         name="🤖 Bot Commands",
-        value="`!r ping` - Check my response time\n`!r info` - Learn about me\n`!r help` - This menu",
+        value="`rr ping` - Check my response time\n`rr info` - Learn about me\n`rr help` - This menu",
         inline=False
     )
     
     embed.add_field(
         name="🔧 Debug Commands",
-        value="`!r debug` - Check your stats\n`!r sessions` - View active sessions\n`!r refresh` - Fix your stuck stats",
+        value="`rr debug` - Check your stats\n`rr sessions` - View active sessions\n`rr refresh` - Fix your stuck stats",
         inline=False
     )
     
@@ -443,12 +451,12 @@ async def help_command(ctx, *, command=None):
     if is_admin_id(ctx.author.id):
         embed.add_field(
             name="👑 Admin Commands",
-            value="`!r admin` - Admin control panel\n*(Admin-only commands)*",
+            value="`rr admin` - Admin control panel\n*(Admin-only commands)*",
             inline=False
         )
-        embed.set_footer(text="💡 Tip: You can use ! as a shortcut | 👑 You are Administrator")
+        embed.set_footer(text="💡 Prefix: rr (e.g. rr help) | 👑 You are Administrator")
     else:
-        embed.set_footer(text="💡 Tip: You can use ! as a shortcut for !r")
+        embed.set_footer(text="💡 Prefix: rr (e.g. rr help)")
     
     await ctx.send(embed=embed)
 
@@ -618,7 +626,7 @@ async def refresh_stats(ctx, member: discord.Member = None):
 
     # Only the admin can refresh someone else's stats
     if member.id != ctx.author.id and not is_admin_id(ctx.author.id):
-        await ctx.send("❌ You can only refresh your own stats. Use `!r refresh` without mentioning anyone.")
+        await ctx.send("❌ You can only refresh your own stats. Use `rr refresh` without mentioning anyone.")
         return
 
     try:
@@ -693,11 +701,11 @@ async def on_command_error(ctx, error):
         # Ignore command not found errors
         pass
     elif isinstance(error, commands.MissingRequiredArgument):
-        await ctx.send(f"❌ Missing `{error.param.name}`. Usage: `!r {ctx.command.qualified_name} {ctx.command.signature}`")
+        await ctx.send(f"❌ Missing `{error.param.name}`. Usage: `rr {ctx.command.qualified_name} {ctx.command.signature}`")
     elif isinstance(error, (commands.MemberNotFound, commands.ChannelNotFound)):
         await ctx.send(f"❌ {error}")
     elif isinstance(error, commands.BadArgument):
-        await ctx.send(f"❌ Invalid value. Usage: `!r {ctx.command.qualified_name} {ctx.command.signature}`")
+        await ctx.send(f"❌ Invalid value. Usage: `rr {ctx.command.qualified_name} {ctx.command.signature}`")
     else:
         # Only log unexpected errors
         print(f"❌ Command error: {error}")

@@ -115,7 +115,7 @@ def build_excel_export(tables: dict, stats: dict, memberships: dict = None) -> b
 
 
 class DbStatsView(OwnerOnlyView):
-    """!r dbstats buttons - only the admin can use them"""
+    """rr dbstats buttons - only the admin can use them"""
 
     def __init__(self, cog, owner_id: int):
         super().__init__(owner_id, timeout=300)
@@ -146,7 +146,7 @@ class DbStatsView(OwnerOnlyView):
         limit = interaction.guild.filesize_limit if interaction.guild else 10 * 1024 * 1024
         if len(data) > limit:
             await interaction.followup.send(
-                f"❌ The export is {len(data) / 1024 / 1024:.1f} MB - over Discord's {limit / 1024 / 1024:.0f} MB upload limit. Use `!r backup` instead.",
+                f"❌ The export is {len(data) / 1024 / 1024:.1f} MB - over Discord's {limit / 1024 / 1024:.0f} MB upload limit. Use `rr backup` instead.",
                 ephemeral=True
             )
             return
@@ -210,37 +210,37 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="👥 User Management",
-            value="`!r addxp <@user> <amount>` - Give XP to user\n`!r setlevel <@user> <level>` - Set user level\n`!r resetuser <@user>` - Reset user stats\n`!r viewuser <@user>` - View detailed user data",
+            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr viewuser <@user>` - View detailed user data",
             inline=False
         )
         
         embed.add_field(
             name="🏆 Achievement Management",
-            value="`!r ach` - Achievement control panel\n`!r ach users <achievement>` - Who has an achievement\n`!r giveach <@user> <achievement>` - Grant achievement\n`!r removeach <@user> <achievement>` - Remove achievement",
+            value="`rr ach` - Achievement control panel\n`rr ach users <achievement>` - Who has an achievement\n`rr giveach <@user> <achievement>` - Grant achievement\n`rr removeach <@user> <achievement>` - Remove achievement",
             inline=False
         )
         
         embed.add_field(
             name="🗄️ Database Management",
-            value="`/dbstats` - Database statistics & Excel export (only you)\n`!r cleanup` - Clean inactive users\n`!r backup` - Create database backup\n`!r totalstats` - Global statistics\n`!r serverstats [server id]` - Server info & members",
+            value="`/dbstats` - Database statistics & Excel export (only you)\n`rr cleanup` - Clean inactive users\n`rr backup` - Create database backup\n`rr totalstats` - Global statistics\n`rr serverstats [server id]` - Server info & members",
             inline=False
         )
         
         embed.add_field(
             name="🤖 Bot Control",
-            value="`!r setstatus <message>` - Set bot status (`clear` to resume rotation)\n`!r announce [#channel] <message>` - Send announcement\n`!r shutdown` - Shutdown bot\n`!r reload` - Reload cogs",
+            value="`rr setstatus <message>` - Set bot status (`clear` to resume rotation)\n`rr announce [#channel] <message>` - Send announcement\n`rr shutdown` - Shutdown bot\n`rr reload` - Reload cogs",
             inline=False
         )
         
         embed.add_field(
             name="🔧 Debug & Maintenance",
-            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - End all active sessions\n`/logs [limit]` - View recent logs (only you can see them)\n`!r testxp` - Test XP system",
+            value="`rr forceupdate <@user>` - Force update user\n`rr clearsessions` - End all active sessions\n`/logs [limit]` - View recent logs (only you can see them)\n`rr testxp` - Test XP system",
             inline=False
         )
         
         embed.add_field(
             name="⚡ Quick Access",
-            value="`!admin` or `!a` - This admin panel\n`!addxp` - Quick XP commands work too",
+            value="`rr admin` or `rr a` - This admin panel\n`rrhelp` - The space after rr is optional",
             inline=False
         )
         
@@ -249,7 +249,7 @@ class RoxyAdmin(commands.Cog):
         await ctx.send(embed=embed)
 
     # Achievement Management Commands (unchanged from previous version)
-    # The group itself has no check so that `!r ach list` stays public;
+    # The group itself has no check so that `rr ach list` stays public;
     # the control panel and the give/remove/users sub-commands are admin-only.
     @commands.group(name='ach', invoke_without_command=True)
     async def achievement_admin(self, ctx):
@@ -265,7 +265,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="📋 **Available Commands**",
-            value="`!r ach list` - View all available achievements\n`!r ach users <achievement>` - See who has an achievement\n`!r ach give <@user> <achievement>` - Grant achievement to user\n`!r ach remove <@user> <achievement>` - Remove achievement from user",
+            value="`rr ach list` - View all available achievements\n`rr ach users <achievement>` - See who has an achievement\n`rr ach give <@user> <achievement>` - Grant achievement to user\n`rr ach remove <@user> <achievement>` - Remove achievement from user",
             inline=False
         )
         
@@ -496,7 +496,7 @@ class RoxyAdmin(commands.Cog):
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="🏆 Achievement Menu Closed",
-                        description="Use `!r ach list` to open again.",
+                        description="Use `rr ach list` to open again.",
                         color=discord.Color.red()
                     ),
                     view=None
@@ -562,13 +562,13 @@ class RoxyAdmin(commands.Cog):
     @commands.command(name='giveach')
     @is_admin()
     async def give_achievement_shortcut(self, ctx, member: discord.Member, *, achievement: str):
-        """Shortcut for !r ach give"""
+        """Shortcut for rr ach give"""
         await self.ach_give(ctx, member, achievement=achievement)
 
     @commands.command(name='removeach')
     @is_admin()
     async def remove_achievement_shortcut(self, ctx, member: discord.Member, *, achievement: str):
-        """Shortcut for !r ach remove"""
+        """Shortcut for rr ach remove"""
         await self.ach_remove(ctx, member, achievement=achievement)
 
     # ==================== USER MANAGEMENT ====================
@@ -745,13 +745,13 @@ class RoxyAdmin(commands.Cog):
         """Set Roxy's status; `clear` resumes the rotating status (Admin only)"""
         if message.lower() == 'clear':
             self.bot.custom_status = None
-            await self.bot.change_presence(activity=discord.Game(name="💜 Use !r help"))
+            await self.bot.change_presence(activity=discord.Game(name="💜 Use rr help"))
             await ctx.send("✅ Custom status cleared - rotating status resumes.")
             return
 
         self.bot.custom_status = message[:128]
         await self.bot.change_presence(activity=discord.Game(name=self.bot.custom_status))
-        await ctx.send(f"✅ Status set to **{self.bot.custom_status}** (use `!r setstatus clear` to resume rotation)")
+        await ctx.send(f"✅ Status set to **{self.bot.custom_status}** (use `rr setstatus clear` to resume rotation)")
 
     @commands.command(name='announce')
     @is_admin()
@@ -906,7 +906,7 @@ class RoxyAdmin(commands.Cog):
             )
             embed.add_field(name=title, value=server_info or "No servers found", inline=False)
             if detailed:
-                embed.add_field(name="💡 **Tip**", value="Use `!r serverstats <server id>` for full details on a server.", inline=False)
+                embed.add_field(name="💡 **Tip**", value="Use `rr serverstats <server id>` for full details on a server.", inline=False)
 
         def add_performance(embed, d, detailed):
             uptime_text = f"{int(d['uptime'] // 3600)}h {int((d['uptime'] % 3600) // 60)}m"
@@ -1025,7 +1025,7 @@ class RoxyAdmin(commands.Cog):
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="📊 Statistics Closed",
-                        description="Use `!r totalstats` to open again.",
+                        description="Use `rr totalstats` to open again.",
                         color=discord.Color.red()
                     ),
                     view=None
@@ -1051,13 +1051,13 @@ class RoxyAdmin(commands.Cog):
         """Full information and member list for a server Roxy is in (Admin only)"""
         if server_id is None:
             if ctx.guild is None:
-                await ctx.send("❌ Use this in a server, or give a server ID: `!r serverstats <server id>`")
+                await ctx.send("❌ Use this in a server, or give a server ID: `rr serverstats <server id>`")
                 return
             guild = ctx.guild
         else:
             guild = self.bot.get_guild(server_id)
             if guild is None:
-                await ctx.send(f"❌ Roxy isn't in a server with ID `{server_id}`. Use `!r totalstats` → Top Servers to see server IDs.")
+                await ctx.send(f"❌ Roxy isn't in a server with ID `{server_id}`. Use `rr totalstats` → Top Servers to see server IDs.")
                 return
 
         bot = self.bot
@@ -1240,7 +1240,7 @@ class RoxyAdmin(commands.Cog):
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="🏠 Server Stats Closed",
-                        description="Use `!r serverstats [server id]` to open again.",
+                        description="Use `rr serverstats [server id]` to open again.",
                         color=discord.Color.red()
                     ),
                     view=None
@@ -1972,7 +1972,7 @@ class RoxyAdmin(commands.Cog):
                 await interaction.response.edit_message(
                     embed=discord.Embed(
                         title="📋 Logs Menu Closed",
-                        description="Use `!r logs` to open again.",
+                        description="Use `rr logs` to open again.",
                         color=discord.Color.red()
                     ),
                     view=None

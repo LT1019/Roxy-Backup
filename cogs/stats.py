@@ -1149,7 +1149,7 @@ class RoxyStats(commands.Cog):
     @commands.command(name='top', aliases=['leaderboard', 'lb'])
     @commands.guild_only()
     async def leaderboard(self, ctx, category='messages'):
-        """Roxy's server leaderboards with a category dropdown"""
+        """Roxy's leaderboards with category dropdown, pages and a server/global toggle"""
         category = category.lower()
         categories = {
             'messages': {'label': 'Messages', 'emoji': '💬', 'tip': 'Stay active in chat to climb!'},
@@ -1170,79 +1170,137 @@ class RoxyStats(commands.Cog):
             await ctx.send(embed=embed)
             return
 
+        PAGE_SIZE = 10
         guild = ctx.guild
-        bot_user = self.bot.user
+        bot = self.bot
         db = self.db
+        state = {'category': category, 'page': 1, 'global': False}
 
-        async def create_leaderboard_embed(category):
-            info = all_categories[category]
-            embed = discord.Embed(
-                title=f"🏆 {info['emoji']} {info['label']} Leaderboard",
-                description=f"**Top performers in {guild.name}**",
-                color=0xffd700  # Gold color
-            )
-
-            # The database covers every server Roxy is in - keep only this server's members
-            leaderboard_data = await db.get_leaderboard(category, 1000)
+        async def get_rows():
+            """All ranked (user_id, name, value) rows for the current category and scope"""
+            leaderboard_data = await db.get_leaderboard(state['category'], 100000)
             rows = []
             for user_id, username, display_name, value in leaderboard_data:
-                member = guild.get_member(user_id)
-                if member:
-                    rows.append((user_id, member.display_name, value))
-                if len(rows) == 10:
-                    break
+                if state['global']:
+                    user = bot.get_user(user_id)
+                    rows.append((user_id, user.display_name if user else (display_name or username), value))
+                else:
+                    # The database covers every server Roxy is in - keep only this server's members
+                    member = guild.get_member(user_id)
+                    if member:
+                        rows.append((user_id, member.display_name, value))
+            return rows
 
-            leaderboard_text = ""
+        async def create_leaderboard_embed():
+            info = all_categories[state['category']]
+            rows = await get_rows()
+            total_pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
+            state['page'] = min(max(state['page'], 1), total_pages)
+            state['total_pages'] = total_pages
+
+            scope = "🌍 Global" if state['global'] else f"🏠 {guild.name}"
+            embed = discord.Embed(
+                title=f"🏆 {info['emoji']} {info['label']} Leaderboard",
+                description=f"**Top performers • {scope}**",
+                color=0x3498db if state['global'] else 0xffd700
+            )
+
+            start = (state['page'] - 1) * PAGE_SIZE
             medals = ["🥇", "🥈", "🥉"]
-            for i, (user_id, name, value) in enumerate(rows):
+            leaderboard_text = ""
+            for rank, (user_id, name, value) in enumerate(rows[start:start + PAGE_SIZE], start=start + 1):
                 # Add crown for admin
                 if is_admin_id(user_id):
                     name = f"👑 {name}"
 
                 # Format value based on category
-                if category in ['playtime', 'listening']:
+                if state['category'] in ['playtime', 'listening']:
                     formatted_value = f"{value // 3600}h {(value % 3600) // 60}m"
-                elif category in ['xp', 'messages']:
+                elif state['category'] in ['xp', 'messages']:
                     formatted_value = f"{value:,}"
                 else:
                     formatted_value = f"Level {value}"
 
-                if i < 3:
-                    leaderboard_text += f"{medals[i]} **{name}** • `{formatted_value}`\n"
+                if rank <= 3:
+                    leaderboard_text += f"{medals[rank - 1]} **{name}** • `{formatted_value}`\n"
                 else:
-                    leaderboard_text += f"`#{i+1:2}` **{name}** • `{formatted_value}`\n"
+                    leaderboard_text += f"`#{rank:2}` **{name}** • `{formatted_value}`\n"
 
             embed.add_field(
-                name="📊 **Rankings**",
-                value=leaderboard_text or "No data for this category in this server yet.",
+                name=f"📊 **Rankings {start + 1}-{start + PAGE_SIZE}**" if rows else "📊 **Rankings**",
+                value=leaderboard_text or "No data for this category yet.",
                 inline=False
             )
+
+            # Show the command user's own rank
+            your_rank = next((i for i, row in enumerate(rows, start=1) if row[0] == ctx.author.id), None)
+            if your_rank:
+                embed.add_field(name="📍 **Your Rank**", value=f"#{your_rank} of {len(rows)}", inline=False)
+
             embed.set_footer(
-                text=f"💜 {info['tip']} • Use the dropdown to switch leaderboards",
-                icon_url=bot_user.display_avatar.url
+                text=f"Page {state['page']}/{total_pages} • 💜 {info['tip']}",
+                icon_url=bot.user.display_avatar.url
             )
             return embed
 
         class LeaderboardSelect(discord.ui.Select):
-            def __init__(self, current):
+            def __init__(self):
                 options = [
-                    discord.SelectOption(label=info['label'], emoji=info['emoji'], value=key, default=(key == current))
+                    discord.SelectOption(label=info['label'], emoji=info['emoji'], value=key, default=(key == state['category']))
                     for key, info in categories.items()
                 ]
-                super().__init__(placeholder="🏆 Choose a leaderboard...", min_values=1, max_values=1, options=options)
+                super().__init__(placeholder="🏆 Choose a leaderboard...", min_values=1, max_values=1, options=options, row=0)
 
             async def callback(self, interaction):
-                selected = self.values[0]
-                embed = await create_leaderboard_embed(selected)
-                await interaction.response.edit_message(embed=embed, view=LeaderboardView(selected))
+                state['category'] = self.values[0]
+                state['page'] = 1  # New category starts at the top
+                await self.view.refresh(interaction)
 
         class LeaderboardView(discord.ui.View):
-            def __init__(self, current):
+            def __init__(self):
                 super().__init__(timeout=300)
-                self.add_item(LeaderboardSelect(current))
+                self.add_item(LeaderboardSelect())
+                self.previous_page.disabled = state['page'] <= 1
+                self.next_page.disabled = state['page'] >= state['total_pages']
+                self.toggle_scope.label = "🏠 Server" if state['global'] else "🌍 Global"
+
+            async def refresh(self, interaction):
+                embed = await create_leaderboard_embed()
+                new_view = LeaderboardView()
+                new_view.message = interaction.message
+                self.stop()  # Only the newest view stays alive
+                await interaction.response.edit_message(embed=embed, view=new_view)
+
+            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary, row=1)
+            async def previous_page(self, interaction, button):
+                state['page'] -= 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary, row=1)
+            async def next_page(self, interaction, button):
+                state['page'] += 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='🌍 Global', style=discord.ButtonStyle.primary, row=1)
+            async def toggle_scope(self, interaction, button):
+                state['global'] = not state['global']
+                state['page'] = 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
+            async def close_menu(self, interaction, button):
+                self.stop()
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="🏆 Leaderboard Closed",
+                        description="Use `!r top` to open again.",
+                        color=discord.Color.red()
+                    ),
+                    view=None
+                )
 
             async def interaction_check(self, interaction):
-                # Only the person who ran the command can switch their leaderboard
+                # Only the person who ran the command can use their leaderboard menu
                 if interaction.user.id != ctx.author.id:
                     await interaction.response.send_message("❌ This menu isn't yours - use `!r top` to get your own.", ephemeral=True)
                     return False
@@ -1250,12 +1308,13 @@ class RoxyStats(commands.Cog):
 
             async def on_timeout(self):
                 try:
-                    await message.edit(view=None)
-                except discord.HTTPException:
+                    await self.message.edit(view=None)
+                except (AttributeError, discord.HTTPException):
                     pass
 
-        embed = await create_leaderboard_embed(category)
-        message = await ctx.send(embed=embed, view=LeaderboardView(category))
+        embed = await create_leaderboard_embed()
+        view = LeaderboardView()
+        view.message = await ctx.send(embed=embed, view=view)
 
     def get_xp_for_level(self, level):
         """Calculate total XP needed to reach a specific level"""

@@ -436,6 +436,12 @@ async def help_command(ctx, *, command=None):
     )
     
     embed.add_field(
+        name="ℹ️ Info Commands",
+        value="`rr serverinfo` - This server's Discord info\n`rr profileinfo [@user]` - Discord profile info",
+        inline=False
+    )
+
+    embed.add_field(
         name="🤖 Bot Commands",
         value="`rr ping` - Check my response time\n`rr info` - Learn about me\n`rr help` - This menu",
         inline=False

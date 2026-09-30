@@ -9,6 +9,7 @@ import psutil
 from datetime import datetime, timedelta, timezone
 from database import RoxyDatabase
 from config import is_admin, is_admin_id
+from info_embeds import server_overview_embed
 
 
 class OwnerOnlyView(discord.ui.View):
@@ -1045,7 +1046,7 @@ class RoxyAdmin(commands.Cog):
             await ctx.send(f"❌ Error generating global statistics: {e}")
             print(f"❌ Error in totalstats: {e}")
 
-    @commands.command(name='serverstats', aliases=['serverinfo'])
+    @commands.command(name='serverstats')
     @is_admin()
     async def server_statistics(self, ctx, server_id: int = None):
         """Full information and member list for a server Roxy is in (Admin only)"""
@@ -1070,52 +1071,8 @@ class RoxyAdmin(commands.Cog):
         }
         state = {'section': 'overview', 'page': 1, 'pages': 1}
 
-        def fmt_date(dt):
-            return f"<t:{int(dt.timestamp())}:D> (<t:{int(dt.timestamp())}:R>)" if dt else "Unknown"
-
         def create_overview_embed():
-            humans = sum(1 for m in guild.members if not m.bot)
-            bots = sum(1 for m in guild.members if m.bot)
-            online = sum(1 for m in guild.members if m.status != discord.Status.offline)
-
-            embed = discord.Embed(title=f"🏠 {guild.name}", description=guild.description or None, color=discord.Color.blurple())
-            if guild.icon:
-                embed.set_thumbnail(url=guild.icon.url)
-            if guild.banner:
-                embed.set_image(url=guild.banner.url)
-
-            embed.add_field(
-                name="🪪 **General**",
-                value=f"**ID:** `{guild.id}`\n**Owner:** {guild.owner.mention if guild.owner else 'Unknown'} (`{guild.owner_id}`)\n**Created:** {fmt_date(guild.created_at)}\n**Roxy joined:** {fmt_date(guild.me.joined_at if guild.me else None)}",
-                inline=False
-            )
-            embed.add_field(
-                name="👥 **Members**",
-                value=f"**Total:** {guild.member_count:,}\n**Humans:** {humans:,}\n**Bots:** {bots:,}\n**Online:** {online:,}",
-                inline=True
-            )
-            embed.add_field(
-                name="💬 **Channels**",
-                value=f"**Text:** {len(guild.text_channels)}\n**Voice:** {len(guild.voice_channels)}\n**Categories:** {len(guild.categories)}\n**Forums:** {len(guild.forums)}\n**Stage:** {len(guild.stage_channels)}",
-                inline=True
-            )
-            embed.add_field(
-                name="✨ **Extras**",
-                value=f"**Roles:** {len(guild.roles) - 1}\n**Emojis:** {len(guild.emojis)}/{guild.emoji_limit}\n**Stickers:** {len(guild.stickers)}/{guild.sticker_limit}\n**Boost tier:** {guild.premium_tier}\n**Boosts:** {guild.premium_subscription_count or 0}",
-                inline=True
-            )
-            embed.add_field(
-                name="🔒 **Settings**",
-                value=f"**Verification:** {str(guild.verification_level).title()}\n**Content filter:** {str(guild.explicit_content_filter).replace('_', ' ').title()}\n**2FA for mods:** {'Yes' if guild.mfa_level else 'No'}\n**Locale:** {guild.preferred_locale}",
-                inline=True
-            )
-            if guild.features:
-                embed.add_field(
-                    name="🎁 **Features**",
-                    value=", ".join(f.replace('_', ' ').title() for f in sorted(guild.features))[:1024],
-                    inline=False
-                )
-            return embed
+            return server_overview_embed(guild)
 
         def create_members_embed():
             members = sorted(guild.members, key=lambda m: m.joined_at or discord.utils.utcnow())

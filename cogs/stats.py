@@ -2,6 +2,7 @@ import discord
 from discord.ext import commands
 from database import RoxyDatabase
 from config import is_admin_id
+from info_embeds import server_overview_embed, profile_embed
 from datetime import datetime, timedelta
 import asyncio
 import re
@@ -1316,6 +1317,31 @@ class RoxyStats(commands.Cog):
         embed = await create_leaderboard_embed()
         view = LeaderboardView()
         view.message = await ctx.send(embed=embed, view=view)
+
+    @commands.command(name='serverinfo')
+    @commands.guild_only()
+    async def server_info(self, ctx, *, extra: str = None):
+        """Discord information about this server (no server IDs - only the server you're in)"""
+        embed = server_overview_embed(ctx.guild)
+        if extra:
+            embed.set_footer(text="ℹ️ Server IDs aren't allowed - rr serverinfo always shows the server you're in")
+        else:
+            embed.set_footer(text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
+        await ctx.send(embed=embed)
+
+    @commands.command(name='profileinfo', aliases=['userinfo', 'whois'])
+    @commands.guild_only()
+    async def profile_info(self, ctx, member: discord.Member = None):
+        """Discord profile information for you or a member of this server"""
+        member = member or ctx.author
+        try:
+            user = await self.bot.fetch_user(member.id)  # Banner and accent color are only on a fetched user
+        except discord.HTTPException:
+            user = None
+
+        embed = profile_embed(member, user)
+        embed.set_footer(text=f"Requested by {ctx.author.display_name} • Use rr profile for Roxy stats", icon_url=ctx.author.display_avatar.url)
+        await ctx.send(embed=embed)
 
     def fit_field(self, text, limit=1024):
         """Fit a list field into Discord's limit by shortening names (bold titles, italic artists,

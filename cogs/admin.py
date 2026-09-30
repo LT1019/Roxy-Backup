@@ -6,7 +6,7 @@ import asyncio
 import io
 import time
 import psutil
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from database import RoxyDatabase
 from config import is_admin, is_admin_id
 
@@ -44,8 +44,10 @@ class ConfirmView(OwnerOnlyView):
         self.stop()
 
 
-def build_excel_export(tables: dict, stats: dict) -> bytes:
-    """Build an .xlsx workbook: a Summary sheet plus one sheet per database table"""
+def build_excel_export(tables: dict, stats: dict, memberships: dict = None) -> bytes:
+    """Build an .xlsx workbook: a Summary sheet plus one sheet per database table.
+    memberships maps user_id -> [(server name, joined datetime)], added to the Users sheet as
+    Server Count, Server 1, Server 1 Joined, Server 2, Server 2 Joined, ..."""
     import io
     from openpyxl import Workbook
     from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
@@ -87,6 +89,23 @@ def build_excel_export(tables: dict, stats: dict) -> bytes:
     summary_rows += [(f"Rows: {name.replace('_', ' ').title()}", len(rows)) for name, (_, rows) in tables.items()]
     write_sheet(summary, ["Statistic", "Value"], summary_rows)
 
+    if memberships is not None and 'users' in tables:
+        columns, rows = tables['users']
+        max_servers = max((len(servers) for servers in memberships.values()), default=0)
+        server_columns = ["server_count"]
+        for n in range(1, max_servers + 1):
+            server_columns += [f"Server {n}", f"Server {n} Joined (UTC)"]
+        
+        extended = []
+        for row in rows:
+            servers = memberships.get(row[0], [])
+            extra = [len(servers)]
+            for server_name, joined_at in servers:
+                extra += [server_name, joined_at.strftime("%Y-%m-%d %H:%M:%S") if joined_at else "Unknown"]
+            extra += [None] * (len(server_columns) - len(extra))
+            extended.append(tuple(row) + tuple(extra))
+        tables = {**tables, 'users': (columns + server_columns, extended)}
+    
     for name, (columns, rows) in tables.items():
         write_sheet(workbook.create_sheet(name.replace('_', ' ').title()[:31]), columns, rows)
 
@@ -110,7 +129,15 @@ class DbStatsView(OwnerOnlyView):
         try:
             tables = await self.cog.db.export_tables()
             stats = await self.cog.db.get_database_stats()
-            data = await asyncio.to_thread(build_excel_export, tables, stats)
+            # Which servers each user shares with Roxy right now, oldest join first
+            memberships = {}
+            for guild in self.cog.bot.guilds:
+                for member in guild.members:
+                    memberships.setdefault(member.id, []).append((guild.name, member.joined_at))
+            for servers in memberships.values():
+                servers.sort(key=lambda server: server[1] or datetime.max.replace(tzinfo=timezone.utc))
+            
+            data = await asyncio.to_thread(build_excel_export, tables, stats, memberships)
         except Exception as e:
             print(f"❌ Error building Excel export: {e}")
             await interaction.followup.send(f"❌ Couldn't build the export: {e}", ephemeral=True)

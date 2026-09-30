@@ -10,7 +10,7 @@ import psutil
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
-from config import ADMIN_USER_ID, is_admin, is_admin_id
+from config import ADMIN_USER_ID, DONATE_LINKS, is_admin, is_admin_id
 
 # Load Roxy's configuration
 load_dotenv()
@@ -321,6 +321,15 @@ async def bot_info(ctx):
     
     await ctx.send(embed=embed)
 
+def donate_view():
+    """Link buttons to the donation pages set in .env (KOFI_URL, PATREON_URL) - None if none are set"""
+    if not DONATE_LINKS:
+        return None
+    view = discord.ui.View()
+    for label, url in DONATE_LINKS:
+        view.add_item(discord.ui.Button(label=f"{label} - Support Roxy", url=url))
+    return view
+
 @roxy.command(name='help')
 async def help_command(ctx, *, command=None):
     """Roxy's help menu"""
@@ -364,7 +373,7 @@ async def help_command(ctx, *, command=None):
         
         embed.set_footer(text="💜 Use rr help for all commands • Roxy tracks your gaming automatically!")
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, view=donate_view())
         return
     
     elif command and command.lower() == 'music':
@@ -407,7 +416,7 @@ async def help_command(ctx, *, command=None):
         
         embed.set_footer(text="💜 Use rr help for all commands • Roxy tracks your Spotify automatically!")
         
-        await ctx.send(embed=embed)
+        await ctx.send(embed=embed, view=donate_view())
         return
     
     # Regular help menu
@@ -464,7 +473,7 @@ async def help_command(ctx, *, command=None):
     else:
         embed.set_footer(text="💡 Prefix: rr (e.g. rr help)")
     
-    await ctx.send(embed=embed)
+    await ctx.send(embed=embed, view=donate_view())
 
 # Debug commands (Available to everyone)
 @roxy.command(name='debug')

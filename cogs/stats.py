@@ -1147,89 +1147,116 @@ class RoxyStats(commands.Cog):
         await ctx.send(embed=embed, view=view)
     
     @commands.command(name='top', aliases=['leaderboard', 'lb'])
+    @commands.guild_only()
     async def leaderboard(self, ctx, category='messages'):
-        """Roxy's server leaderboards"""
-        valid_categories = ['messages', 'playtime', 'listening', 'level', 'xp']
-        
-        if category not in valid_categories:
+        """Roxy's server leaderboards with a category dropdown"""
+        category = category.lower()
+        categories = {
+            'messages': {'label': 'Messages', 'emoji': '💬', 'tip': 'Stay active in chat to climb!'},
+            'playtime': {'label': 'Playtime', 'emoji': '🎮', 'tip': 'Game more to reach the top!'},
+            'listening': {'label': 'Listening', 'emoji': '🎵', 'tip': 'Listen to more music to climb!'},
+            'level': {'label': 'Level', 'emoji': '⭐', 'tip': 'Balance all activities!'},
+        }
+        # 'xp' still works when typed, it just isn't in the dropdown
+        extra_categories = {'xp': {'label': 'XP', 'emoji': '✨', 'tip': 'Earn XP through all activities!'}}
+        all_categories = {**categories, **extra_categories}
+
+        if category not in all_categories:
             embed = discord.Embed(
                 title="❌ Invalid Category",
-                description=f"**Valid categories:** {', '.join(valid_categories)}",
+                description=f"**Valid categories:** {', '.join(all_categories)}",
                 color=0xff6b6b
             )
             await ctx.send(embed=embed)
             return
-        
-        leaderboard_data = await self.db.get_leaderboard(category, 10)
-        
-        if not leaderboard_data:
+
+        guild = ctx.guild
+        bot_user = self.bot.user
+        db = self.db
+
+        async def create_leaderboard_embed(category):
+            info = all_categories[category]
             embed = discord.Embed(
-                title="❌ No leaderboard data",
-                description="No data available for this category",
-                color=0xff6b6b
+                title=f"🏆 {info['emoji']} {info['label']} Leaderboard",
+                description=f"**Top performers in {guild.name}**",
+                color=0xffd700  # Gold color
             )
-            await ctx.send(embed=embed)
-            return
-        
-        # Create beautiful leaderboard embed
-        embed = discord.Embed(
-            title=f"🏆 {category.title()} Leaderboard",
-            description=f"**Top performers in {ctx.guild.name}**",
-            color=0xffd700  # Gold color
-        )
-        
-        leaderboard_text = ""
-        medals = ["🥇", "🥈", "🥉"]
-        
-        for i, (user_id, username, display_name, value) in enumerate(leaderboard_data):
-            # Get member object to check if still in server
-            member = ctx.guild.get_member(user_id)
-            if member and i < 10:  # Only show top 10
-                name = member.display_name
-                
+
+            # The database covers every server Roxy is in - keep only this server's members
+            leaderboard_data = await db.get_leaderboard(category, 1000)
+            rows = []
+            for user_id, username, display_name, value in leaderboard_data:
+                member = guild.get_member(user_id)
+                if member:
+                    rows.append((user_id, member.display_name, value))
+                if len(rows) == 10:
+                    break
+
+            leaderboard_text = ""
+            medals = ["🥇", "🥈", "🥉"]
+            for i, (user_id, name, value) in enumerate(rows):
                 # Add crown for admin
                 if is_admin_id(user_id):
                     name = f"👑 {name}"
-                
+
                 # Format value based on category
                 if category in ['playtime', 'listening']:
-                    hours = value // 3600
-                    minutes = (value % 3600) // 60
-                    formatted_value = f"{hours}h {minutes}m"
+                    formatted_value = f"{value // 3600}h {(value % 3600) // 60}m"
                 elif category in ['xp', 'messages']:
                     formatted_value = f"{value:,}"
                 else:
-                    formatted_value = str(value)
-                
-                # Create beautiful ranking
+                    formatted_value = f"Level {value}"
+
                 if i < 3:
-                    medal = medals[i]
-                    leaderboard_text += f"{medal} **{name}** • `{formatted_value}`\n"
+                    leaderboard_text += f"{medals[i]} **{name}** • `{formatted_value}`\n"
                 else:
                     leaderboard_text += f"`#{i+1:2}` **{name}** • `{formatted_value}`\n"
-        
-        embed.add_field(
-            name="📊 **Rankings**",
-            value=leaderboard_text or "No users found in this server.",
-            inline=False
-        )
-        
-        # Add category-specific footer
-        category_tips = {
-            'messages': '💬 Stay active in chat to climb!',
-            'playtime': '🎮 Game more to reach the top!',
-            'listening': '🎵 Listen to more music to climb!',
-            'level': '⭐ Balance all activities!',
-            'xp': '✨ Earn XP through all activities!'
-        }
-        
-        embed.set_footer(
-            text=f"💜 {category_tips.get(category, 'Keep being awesome!')}",
-            icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
-        )
-        
-        await ctx.send(embed=embed)
-    
+
+            embed.add_field(
+                name="📊 **Rankings**",
+                value=leaderboard_text or "No data for this category in this server yet.",
+                inline=False
+            )
+            embed.set_footer(
+                text=f"💜 {info['tip']} • Use the dropdown to switch leaderboards",
+                icon_url=bot_user.display_avatar.url
+            )
+            return embed
+
+        class LeaderboardSelect(discord.ui.Select):
+            def __init__(self, current):
+                options = [
+                    discord.SelectOption(label=info['label'], emoji=info['emoji'], value=key, default=(key == current))
+                    for key, info in categories.items()
+                ]
+                super().__init__(placeholder="🏆 Choose a leaderboard...", min_values=1, max_values=1, options=options)
+
+            async def callback(self, interaction):
+                selected = self.values[0]
+                embed = await create_leaderboard_embed(selected)
+                await interaction.response.edit_message(embed=embed, view=LeaderboardView(selected))
+
+        class LeaderboardView(discord.ui.View):
+            def __init__(self, current):
+                super().__init__(timeout=300)
+                self.add_item(LeaderboardSelect(current))
+
+            async def interaction_check(self, interaction):
+                # Only the person who ran the command can switch their leaderboard
+                if interaction.user.id != ctx.author.id:
+                    await interaction.response.send_message("❌ This menu isn't yours - use `!r top` to get your own.", ephemeral=True)
+                    return False
+                return True
+
+            async def on_timeout(self):
+                try:
+                    await message.edit(view=None)
+                except discord.HTTPException:
+                    pass
+
+        embed = await create_leaderboard_embed(category)
+        message = await ctx.send(embed=embed, view=LeaderboardView(category))
+
     def get_xp_for_level(self, level):
         """Calculate total XP needed to reach a specific level"""
         if level <= 1:

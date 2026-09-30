@@ -95,7 +95,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="🔧 Debug & Maintenance",
-            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - End all active sessions\n`!r logs [limit]` - View recent logs (only you can see them)\n`!r testxp` - Test XP system",
+            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - End all active sessions\n`!r logs [limit]` - View recent logs (auto-removed after 5 min idle)\n`!r testxp` - Test XP system",
             inline=False
         )
         
@@ -1338,6 +1338,7 @@ class RoxyAdmin(commands.Cog):
         class LogsView(OwnerOnlyView):
             def __init__(self, category, page, total_pages, admin_cog):
                 super().__init__(ctx.author.id, timeout=300)  # Admin only, 5 minute timeout
+                LogsView.latest = self  # Each navigation attaches a new view - only the newest one counts
                 self.category = category
                 self.page = page
                 self.total_pages = total_pages
@@ -1368,10 +1369,11 @@ class RoxyAdmin(commands.Cog):
                 await interaction.response.edit_message(embed=embed, view=view)
             
             async def on_timeout(self):
-                for item in self.children:
+                # Remove the logs from the channel once the admin stops using them
+                if LogsView.latest is self and getattr(LogsView, 'logs_message', None):
                     try:
-                        item.disabled = True
-                    except AttributeError:
+                        await LogsView.logs_message.delete()
+                    except (discord.Forbidden, discord.NotFound):
                         pass
         
         # Button classes (same as before)
@@ -1506,40 +1508,16 @@ class RoxyAdmin(commands.Cog):
         embed, total_pages = await build_category_embed(current_category, current_page)
         view = LogsView(current_category, current_page, total_pages, self)
 
-        # Logs contain everyone's activity - show them as an "Only you can see this" message.
-        # Discord only allows those as a reply to an interaction, so post a button the admin clicks.
-        if ctx.guild is None:
-            await ctx.send(embed=embed, view=view)  # Already private in DMs
-            return
+        # Show the logs right away. Remove the command message so the channel only shows the menu,
+        # and take the menu down when it times out so the logs don't stay in the channel.
+        if ctx.guild:
+            try:
+                await ctx.message.delete()
+            except (discord.Forbidden, discord.NotFound):
+                pass  # No Manage Messages permission - the command text stays
 
-        try:
-            await ctx.message.delete()
-        except (discord.Forbidden, discord.NotFound):
-            pass  # No Manage Messages permission - the command text stays, the logs don't
-
-        class OpenLogsView(OwnerOnlyView):
-            def __init__(self):
-                super().__init__(ctx.author.id, timeout=60)
-                self.prompt_message = None
-
-            @discord.ui.button(label='🔒 View Logs', style=discord.ButtonStyle.primary)
-            async def open_logs(self, interaction, button):
-                await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-                self.stop()
-                try:
-                    await interaction.message.delete()
-                except (discord.Forbidden, discord.NotFound):
-                    pass
-
-            async def on_timeout(self):
-                if self.prompt_message:
-                    try:
-                        await self.prompt_message.delete()
-                    except (discord.Forbidden, discord.NotFound):
-                        pass
-
-        open_view = OpenLogsView()
-        open_view.prompt_message = await ctx.send("👑 Logs are ready - only you can open them.", view=open_view)
+        logs_message = await ctx.send(embed=embed, view=view)
+        LogsView.logs_message = logs_message
 
 async def setup(bot):
     await bot.add_cog(RoxyAdmin(bot))

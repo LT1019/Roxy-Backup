@@ -717,7 +717,7 @@ class RoxyDatabase:
                     SELECT user_id, username, display_name, {column}
                     FROM users 
                     WHERE {column} > 0
-                    ORDER BY {column} DESC 
+                    ORDER BY {column} DESC, xp DESC
                     LIMIT ?
                 """, (limit,)) as cursor:
                     result = await cursor.fetchall()

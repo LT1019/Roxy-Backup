@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands
+from discord import app_commands
 import aiosqlite
 import asyncio
 import io
@@ -139,6 +140,19 @@ class DbStatsView(OwnerOnlyView):
                 pass
 
 
+async def redirect_to_slash(ctx, name: str) -> bool:
+    """Private ("Only you can see this") replies only exist for slash commands.
+    In a server, a text-command use is removed and pointed at the slash version. Returns True if redirected."""
+    if ctx.interaction is not None or ctx.guild is None:
+        return False  # Slash command, or a DM - already private
+    try:
+        await ctx.message.delete()
+    except (discord.Forbidden, discord.NotFound):
+        pass
+    await ctx.send(f"🔒 Use **/{name}** instead - Discord only allows \"Only you can see this\" replies for slash commands.", delete_after=8)
+    return True
+
+
 async def confirm_action(ctx, prompt: str) -> bool:
     """Ask the admin to confirm a destructive action; True if confirmed"""
     view = ConfirmView(ctx.author.id)
@@ -181,7 +195,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="🗄️ Database Management",
-            value="`!r dbstats` - Database statistics\n`!r cleanup` - Clean inactive users\n`!r backup` - Create database backup\n`!r totalstats` - Global statistics\n`!r serverstats [server id]` - Server info & members",
+            value="`/dbstats` - Database statistics & Excel export (only you)\n`!r cleanup` - Clean inactive users\n`!r backup` - Create database backup\n`!r totalstats` - Global statistics\n`!r serverstats [server id]` - Server info & members",
             inline=False
         )
         
@@ -193,7 +207,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="🔧 Debug & Maintenance",
-            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - End all active sessions\n`!r logs [limit]` - View recent logs (auto-removed after 5 min idle)\n`!r testxp` - Test XP system",
+            value="`!r forceupdate <@user>` - Force update user\n`!r clearsessions` - End all active sessions\n`/logs [limit]` - View recent logs (only you can see them)\n`!r testxp` - Test XP system",
             inline=False
         )
         
@@ -639,10 +653,14 @@ class RoxyAdmin(commands.Cog):
 
     # ==================== DATABASE MANAGEMENT ====================
 
-    @commands.command(name='dbstats')
+    @commands.hybrid_command(name='dbstats', description="Database statistics and Excel export (admin only, only you can see it)")
+    @app_commands.default_permissions(administrator=True)
     @is_admin()
     async def database_statistics(self, ctx):
         """Database statistics (Admin only)"""
+        if await redirect_to_slash(ctx, 'dbstats'):
+            return
+        
         stats = await self.db.get_database_stats()
         if not stats:
             await ctx.send("❌ Couldn't load database statistics - check the console for details.")
@@ -666,7 +684,7 @@ class RoxyAdmin(commands.Cog):
         embed.set_footer(text="👑 Export Excel sends the file privately - only you can see it")
 
         view = DbStatsView(self, ctx.author.id)
-        view.message = await ctx.send(embed=embed, view=view)
+        view.message = await ctx.send(embed=embed, view=view, ephemeral=True)
 
     @commands.command(name='cleanup')
     @is_admin()
@@ -1211,10 +1229,14 @@ class RoxyAdmin(commands.Cog):
         view = ServerView()
         view.message = await ctx.send(embed=embed, view=view)
 
-    @commands.command(name='logs')
+    @commands.hybrid_command(name='logs', description="Recent activity logs (admin only, only you can see it)")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(limit="Entries per page (1-50, default 10)")
     @is_admin()
     async def view_recent_logs(self, ctx, limit: int = 10):
         """Enhanced paginated logs with dropdown navigation (Admin only)"""
+        if await redirect_to_slash(ctx, 'logs'):
+            return
         
         # Enforce limit constraints: default 10, max 50
         if limit < 1:
@@ -1800,7 +1822,7 @@ class RoxyAdmin(commands.Cog):
                 if LogsView.latest is self and getattr(LogsView, 'logs_message', None):
                     try:
                         await LogsView.logs_message.delete()
-                    except (discord.Forbidden, discord.NotFound):
+                    except discord.HTTPException:
                         pass
         
         # Button classes (same as before)
@@ -1935,15 +1957,8 @@ class RoxyAdmin(commands.Cog):
         embed, total_pages = await build_category_embed(current_category, current_page)
         view = LogsView(current_category, current_page, total_pages, self)
 
-        # Show the logs right away. Remove the command message so the channel only shows the menu,
-        # and take the menu down when it times out so the logs don't stay in the channel.
-        if ctx.guild:
-            try:
-                await ctx.message.delete()
-            except (discord.Forbidden, discord.NotFound):
-                pass  # No Manage Messages permission - the command text stays
-
-        logs_message = await ctx.send(embed=embed, view=view)
+        # Private reply ("Only you can see this") - removed when the menu times out
+        logs_message = await ctx.send(embed=embed, view=view, ephemeral=True)
         LogsView.logs_message = logs_message
 
 async def setup(bot):

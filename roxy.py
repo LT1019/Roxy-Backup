@@ -1,5 +1,6 @@
 import discord
 from discord.ext import commands, tasks
+from discord import app_commands
 import os
 import asyncio
 import random
@@ -47,6 +48,13 @@ class RoxyBot(commands.Bot):
         await self.load_extension('cogs.stats')
         await self.load_extension('cogs.admin')  # Load admin cog
         print("🤖 Roxy's cogs loaded successfully!")
+
+        # Register slash commands (/dbstats, /logs) with Discord
+        try:
+            synced = await self.tree.sync()
+            print(f"🔗 Synced {len(synced)} slash command(s)")
+        except Exception as e:
+            print(f"❌ Failed to sync slash commands: {e}")
 
 # Initialize Roxy
 roxy = RoxyBot()
@@ -671,7 +679,14 @@ async def on_command(ctx):
 # Error handler - Silent for admin commands
 @roxy.event
 async def on_command_error(ctx, error):
-    if isinstance(error, commands.CheckFailure):
+    if isinstance(error, commands.HybridCommandError):
+        error = error.original  # Errors from the slash-command side of hybrid commands
+
+    if ctx.interaction is not None and isinstance(error, (commands.CheckFailure, app_commands.CheckFailure)):
+        # A slash command must always get a reply, or Discord shows "The application did not respond"
+        if not ctx.interaction.response.is_done():
+            await ctx.interaction.response.send_message("❌ This command is for Roxy's admin only.", ephemeral=True)
+    elif isinstance(error, commands.CheckFailure):
         # Completely ignore failed admin commands - no response
         pass
     elif isinstance(error, commands.CommandNotFound):

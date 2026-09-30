@@ -291,7 +291,8 @@ class RoxyAdmin(commands.Cog):
                     placeholder="🏆 Select an achievement category...",
                     min_values=1,
                     max_values=1,
-                    options=options
+                    options=options,
+                    row=0
                 )
             
             async def callback(self, interaction):
@@ -307,7 +308,7 @@ class RoxyAdmin(commands.Cog):
                 super().__init__(ctx.author.id, timeout=300)  # Only the person who opened it can navigate
                 self.add_item(AchievementSelect())
             
-            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary)
+            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary, row=1)
             async def previous_category(self, interaction, button):
                 nonlocal current_category
                 current_category = (current_category - 1) % len(category_names)
@@ -315,7 +316,7 @@ class RoxyAdmin(commands.Cog):
                 embed = create_achievement_embed(current_category)
                 await interaction.response.edit_message(embed=embed, view=self)
             
-            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary)
+            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary, row=1)
             async def next_category(self, interaction, button):
                 nonlocal current_category
                 current_category = (current_category + 1) % len(category_names)
@@ -323,7 +324,7 @@ class RoxyAdmin(commands.Cog):
                 embed = create_achievement_embed(current_category)
                 await interaction.response.edit_message(embed=embed, view=self)
             
-            @discord.ui.button(label='🏠 Overview', style=discord.ButtonStyle.primary)
+            @discord.ui.button(label='🏠 Overview', style=discord.ButtonStyle.primary, row=1)
             async def show_overview(self, interaction, button):
                 # Create overview embed showing all categories
                 overview_embed = discord.Embed(
@@ -351,7 +352,7 @@ class RoxyAdmin(commands.Cog):
                 
                 await interaction.response.edit_message(embed=overview_embed, view=self)
             
-            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger)
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
                 await interaction.response.edit_message(
                     embed=discord.Embed(

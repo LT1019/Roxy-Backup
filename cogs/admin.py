@@ -83,7 +83,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="🗄️ Database Management",
-            value="`!r dbstats` - Database statistics\n`!r cleanup` - Clean inactive users\n`!r backup` - Create database backup\n`!r totalstats` - Global statistics",
+            value="`!r dbstats` - Database statistics\n`!r cleanup` - Clean inactive users\n`!r backup` - Create database backup\n`!r totalstats` - Global statistics\n`!r serverstats [server id]` - Server info & members",
             inline=False
         )
         
@@ -694,7 +694,8 @@ class RoxyAdmin(commands.Cog):
             'insights': {'label': 'Activity Insights', 'emoji': '🎮', 'description': 'Averages per user and session'},
             'achievements': {'label': 'Achievements', 'emoji': '🏅', 'description': 'Achievement system summary'},
         }
-        state = {'section': 'all'}
+        state = {'section': 'all', 'server_page': 1, 'server_pages': 1}
+        SERVERS_PER_PAGE = 10
 
         async def gather():
             """Collect fresh numbers every time the view changes"""
@@ -740,14 +741,26 @@ class RoxyAdmin(commands.Cog):
             )
 
         def add_servers(embed, d, detailed):
-            count = 10 if detailed else 5
-            top_servers = sorted(bot.guilds, key=lambda g: g.member_count or 0, reverse=True)[:count]
-            server_info = "\n".join(f"**{i}.** {guild.name} - {guild.member_count} members" for i, guild in enumerate(top_servers, 1))
-            embed.add_field(
-                name=f"🏠 **Top {count} Servers by Members**",
-                value=server_info or "No servers found",
-                inline=False
+            ranked = sorted(bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
+            if detailed:
+                # Paged: 10 servers per page, Previous/Next buttons move through the rest
+                state['server_pages'] = max(1, (len(ranked) + SERVERS_PER_PAGE - 1) // SERVERS_PER_PAGE)
+                state['server_page'] = min(max(state['server_page'], 1), state['server_pages'])
+                start = (state['server_page'] - 1) * SERVERS_PER_PAGE
+                shown = ranked[start:start + SERVERS_PER_PAGE]
+                title = f"🏠 **Top Servers {start + 1}-{start + len(shown)} of {len(ranked)}**"
+            else:
+                start = 0
+                shown = ranked[:5]
+                title = "🏠 **Top 5 Servers by Members**"
+
+            server_info = "\n".join(
+                f"**{i}.** {guild.name} - {guild.member_count} members" + (f" • `{guild.id}`" if detailed else "")
+                for i, guild in enumerate(shown, start + 1)
             )
+            embed.add_field(name=title, value=server_info or "No servers found", inline=False)
+            if detailed:
+                embed.add_field(name="💡 **Tip**", value="Use `!r serverstats <server id>` for full details on a server.", inline=False)
 
         def add_performance(embed, d, detailed):
             uptime_text = f"{int(d['uptime'] // 3600)}h {int((d['uptime'] % 3600) // 60)}m"
@@ -823,6 +836,7 @@ class RoxyAdmin(commands.Cog):
 
             async def callback(self, interaction):
                 state['section'] = self.values[0]
+                state['server_page'] = 1
                 await self.view.refresh(interaction)
 
         class StatsView(OwnerOnlyView):
@@ -830,12 +844,30 @@ class RoxyAdmin(commands.Cog):
                 super().__init__(ctx.author.id, timeout=300)
                 self.add_item(StatsSelect())
 
+                # Page buttons only make sense on the Top Servers section
+                if state['section'] == 'servers':
+                    self.previous_page.disabled = state['server_page'] <= 1
+                    self.next_page.disabled = state['server_page'] >= state['server_pages']
+                else:
+                    self.remove_item(self.previous_page)
+                    self.remove_item(self.next_page)
+
             async def refresh(self, interaction):
                 embed = await create_stats_embed()
                 new_view = StatsView()
                 new_view.message = interaction.message
                 self.stop()  # Only the newest view stays alive
                 await interaction.response.edit_message(embed=embed, view=new_view)
+
+            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary, row=1)
+            async def previous_page(self, interaction, button):
+                state['server_page'] -= 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary, row=1)
+            async def next_page(self, interaction, button):
+                state['server_page'] += 1
+                await self.refresh(interaction)
 
             @discord.ui.button(label='🔄 Refresh', style=discord.ButtonStyle.primary, row=1)
             async def refresh_button(self, interaction, button):
@@ -866,6 +898,217 @@ class RoxyAdmin(commands.Cog):
         except Exception as e:
             await ctx.send(f"❌ Error generating global statistics: {e}")
             print(f"❌ Error in totalstats: {e}")
+
+    @commands.command(name='serverstats', aliases=['serverinfo'])
+    @is_admin()
+    async def server_statistics(self, ctx, server_id: int = None):
+        """Full information and member list for a server Roxy is in (Admin only)"""
+        if server_id is None:
+            if ctx.guild is None:
+                await ctx.send("❌ Use this in a server, or give a server ID: `!r serverstats <server id>`")
+                return
+            guild = ctx.guild
+        else:
+            guild = self.bot.get_guild(server_id)
+            if guild is None:
+                await ctx.send(f"❌ Roxy isn't in a server with ID `{server_id}`. Use `!r totalstats` → Top Servers to see server IDs.")
+                return
+
+        bot = self.bot
+        db = self.db
+        MEMBERS_PER_PAGE = 15
+        sections = {
+            'overview': {'label': 'Overview', 'emoji': '🏠', 'description': 'Server information'},
+            'members': {'label': 'Members', 'emoji': '👥', 'description': 'Everyone who has joined, oldest first'},
+            'roxy': {'label': 'Roxy Stats', 'emoji': '📊', 'description': "This server's activity tracked by Roxy"},
+        }
+        state = {'section': 'overview', 'page': 1, 'pages': 1}
+
+        def fmt_date(dt):
+            return f"<t:{int(dt.timestamp())}:D> (<t:{int(dt.timestamp())}:R>)" if dt else "Unknown"
+
+        def create_overview_embed():
+            humans = sum(1 for m in guild.members if not m.bot)
+            bots = sum(1 for m in guild.members if m.bot)
+            online = sum(1 for m in guild.members if m.status != discord.Status.offline)
+
+            embed = discord.Embed(title=f"🏠 {guild.name}", description=guild.description or None, color=discord.Color.blurple())
+            if guild.icon:
+                embed.set_thumbnail(url=guild.icon.url)
+            if guild.banner:
+                embed.set_image(url=guild.banner.url)
+
+            embed.add_field(
+                name="🪪 **General**",
+                value=f"**ID:** `{guild.id}`\n**Owner:** {guild.owner.mention if guild.owner else 'Unknown'} (`{guild.owner_id}`)\n**Created:** {fmt_date(guild.created_at)}\n**Roxy joined:** {fmt_date(guild.me.joined_at if guild.me else None)}",
+                inline=False
+            )
+            embed.add_field(
+                name="👥 **Members**",
+                value=f"**Total:** {guild.member_count:,}\n**Humans:** {humans:,}\n**Bots:** {bots:,}\n**Online:** {online:,}",
+                inline=True
+            )
+            embed.add_field(
+                name="💬 **Channels**",
+                value=f"**Text:** {len(guild.text_channels)}\n**Voice:** {len(guild.voice_channels)}\n**Categories:** {len(guild.categories)}\n**Forums:** {len(guild.forums)}\n**Stage:** {len(guild.stage_channels)}",
+                inline=True
+            )
+            embed.add_field(
+                name="✨ **Extras**",
+                value=f"**Roles:** {len(guild.roles) - 1}\n**Emojis:** {len(guild.emojis)}/{guild.emoji_limit}\n**Stickers:** {len(guild.stickers)}/{guild.sticker_limit}\n**Boost tier:** {guild.premium_tier}\n**Boosts:** {guild.premium_subscription_count or 0}",
+                inline=True
+            )
+            embed.add_field(
+                name="🔒 **Settings**",
+                value=f"**Verification:** {str(guild.verification_level).title()}\n**Content filter:** {str(guild.explicit_content_filter).replace('_', ' ').title()}\n**2FA for mods:** {'Yes' if guild.mfa_level else 'No'}\n**Locale:** {guild.preferred_locale}",
+                inline=True
+            )
+            if guild.features:
+                embed.add_field(
+                    name="🎁 **Features**",
+                    value=", ".join(f.replace('_', ' ').title() for f in sorted(guild.features))[:1024],
+                    inline=False
+                )
+            return embed
+
+        def create_members_embed():
+            members = sorted(guild.members, key=lambda m: m.joined_at or discord.utils.utcnow())
+            state['pages'] = max(1, (len(members) + MEMBERS_PER_PAGE - 1) // MEMBERS_PER_PAGE)
+            state['page'] = min(max(state['page'], 1), state['pages'])
+            start = (state['page'] - 1) * MEMBERS_PER_PAGE
+
+            lines = []
+            for number, member in enumerate(members[start:start + MEMBERS_PER_PAGE], start + 1):
+                joined = f"<t:{int(member.joined_at.timestamp())}:R>" if member.joined_at else "unknown"
+                tags = (" 🤖" if member.bot else "") + (" 👑" if member.id == guild.owner_id else "")
+                lines.append(f"`#{number}` **{member.display_name}**{tags} (@{member.name}) • joined {joined}")
+
+            embed = discord.Embed(
+                title=f"👥 Members of {guild.name}",
+                description="\n".join(lines) or "No members found",
+                color=discord.Color.blurple()
+            )
+            embed.add_field(
+                name="📊 **Showing**",
+                value=f"{start + 1}-{start + len(lines)} of {len(members):,} members (oldest first)",
+                inline=False
+            )
+            return embed
+
+        async def create_roxy_embed():
+            member_ids = {m.id for m in guild.members if not m.bot}
+            tracked = [row for row in await db.get_all_users_admin(limit=1000000) if row[0] in member_ids]
+            # rows: user_id, display_name, total_messages, total_playtime, total_listening_time, level, xp, last_seen
+            total_messages = sum(r[2] or 0 for r in tracked)
+            total_playtime = sum(r[3] or 0 for r in tracked)
+            total_listening = sum(r[4] or 0 for r in tracked)
+            week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+            active_week = sum(1 for r in tracked if r[7] and r[7] > week_ago)
+            gaming_now = sum(1 for uid in getattr(bot, 'active_sessions', {}) if uid in member_ids)
+            listening_now = sum(1 for uid in getattr(bot, 'active_listening', {}) if uid in member_ids)
+
+            embed = discord.Embed(title=f"📊 Roxy Stats for {guild.name}", color=discord.Color.gold())
+            embed.add_field(
+                name="👥 **Tracking**",
+                value=f"**Tracked members:** {len(tracked):,} of {len(member_ids):,} humans\n**Active this week:** {active_week:,}\n**Gaming now:** {gaming_now}\n**Listening now:** {listening_now}",
+                inline=False
+            )
+            embed.add_field(
+                name="📈 **Totals**",
+                value=f"💬 **{total_messages:,}** messages\n🎮 **{total_playtime // 3600:,}h** gaming\n🎵 **{total_listening // 3600:,}h** listening",
+                inline=True
+            )
+            top_level = max(tracked, key=lambda r: r[6] or 0, default=None)
+            top_chatter = max(tracked, key=lambda r: r[2] or 0, default=None)
+            embed.add_field(
+                name="🏆 **Top Members**",
+                value=(f"⭐ **Highest level:** {top_level[1]} (Lv.{top_level[5]})\n💬 **Most messages:** {top_chatter[1]} ({top_chatter[2]:,})"
+                       if tracked else "No tracked members yet"),
+                inline=True
+            )
+            return embed
+
+        async def create_embed():
+            if state['section'] == 'overview':
+                embed = create_overview_embed()
+            elif state['section'] == 'members':
+                embed = create_members_embed()
+            else:
+                embed = await create_roxy_embed()
+
+            page_text = f"Page {state['page']}/{state['pages']} • " if state['section'] == 'members' else ""
+            embed.set_footer(text=f"👑 {page_text}Server ID {guild.id} • Use the dropdown to switch views")
+            return embed
+
+        class ServerSelect(discord.ui.Select):
+            def __init__(self):
+                options = [
+                    discord.SelectOption(label=info['label'], emoji=info['emoji'], description=info['description'],
+                                         value=key, default=(key == state['section']))
+                    for key, info in sections.items()
+                ]
+                super().__init__(placeholder="🏠 Choose a view...", min_values=1, max_values=1, options=options, row=0)
+
+            async def callback(self, interaction):
+                state['section'] = self.values[0]
+                state['page'] = 1
+                await self.view.refresh(interaction)
+
+        class ServerView(OwnerOnlyView):
+            def __init__(self):
+                super().__init__(ctx.author.id, timeout=300)
+                self.add_item(ServerSelect())
+
+                # Page buttons only on the member list
+                if state['section'] == 'members':
+                    self.previous_page.disabled = state['page'] <= 1
+                    self.next_page.disabled = state['page'] >= state['pages']
+                else:
+                    self.remove_item(self.previous_page)
+                    self.remove_item(self.next_page)
+
+            async def refresh(self, interaction):
+                embed = await create_embed()
+                new_view = ServerView()
+                new_view.message = interaction.message
+                self.stop()  # Only the newest view stays alive
+                await interaction.response.edit_message(embed=embed, view=new_view)
+
+            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary, row=1)
+            async def previous_page(self, interaction, button):
+                state['page'] -= 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary, row=1)
+            async def next_page(self, interaction, button):
+                state['page'] += 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='🔄 Refresh', style=discord.ButtonStyle.primary, row=1)
+            async def refresh_button(self, interaction, button):
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
+            async def close_menu(self, interaction, button):
+                self.stop()
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="🏠 Server Stats Closed",
+                        description="Use `!r serverstats [server id]` to open again.",
+                        color=discord.Color.red()
+                    ),
+                    view=None
+                )
+
+            async def on_timeout(self):
+                try:
+                    await self.message.edit(view=None)
+                except (AttributeError, discord.HTTPException):
+                    pass
+
+        embed = await create_embed()
+        view = ServerView()
+        view.message = await ctx.send(embed=embed, view=view)
 
     @commands.command(name='logs')
     @is_admin()

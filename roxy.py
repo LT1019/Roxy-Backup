@@ -437,7 +437,7 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="ℹ️ Info Commands",
-        value="`rr serverinfo` - This server's Discord info\n`rr profileinfo [@user]` - Discord profile info",
+        value="`rr serverinfo` - This server's Discord info\n`rr profileinfo [@user]` - Discord profile (Server / Global)",
         inline=False
     )
 

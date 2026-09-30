@@ -95,6 +95,75 @@ def describe_activity(activity) -> str:
     return f"• {activity.name}"
 
 
+CDN = "https://cdn.discordapp.com"
+
+
+def global_profile_embed(user: discord.User, raw: dict) -> discord.Embed:
+    """Discord-wide profile: badges, server tag, avatar, decoration, nameplate, display name style, banner.
+    raw is the API user object - newer items (nameplate, name style, tag) aren't in discord.py 2.5 yet."""
+    color = user.accent_color or discord.Color.blurple()
+    embed = discord.Embed(title=f"🌍 {user.global_name or user.name}", description=f"@{user.name} • `{user.id}`", color=color)
+    embed.set_thumbnail(url=user.display_avatar.url)
+
+    nameplate = (raw.get('collectibles') or {}).get('nameplate')
+    if user.banner:
+        embed.set_image(url=user.banner.url)
+    elif nameplate:
+        embed.set_image(url=f"{CDN}/assets/collectibles/{nameplate['asset']}static.png")
+
+    badges = [BADGES[flag.name] for flag in user.public_flags.all() if flag.name in BADGES]
+    embed.add_field(name="🏅 **Badges**", value="\n".join(badges) or "No public badges", inline=True)
+
+    tag = raw.get('primary_guild') or raw.get('clan')
+    if tag and tag.get('identity_enabled') and tag.get('tag'):
+        badge_url = f"{CDN}/guild-tag-badges/{tag['identity_guild_id']}/{tag['badge']}.png" if tag.get('badge') else None
+        embed.add_field(name="🏷️ **Server Tag**", value=f"**{tag['tag']}**" + (f" • [Badge]({badge_url})" if badge_url else ""), inline=True)
+
+    avatar_kind = "Animated" if user.display_avatar.is_animated() else "Static"
+    embed.add_field(name="🖼️ **Avatar**", value=f"{avatar_kind} • [Open]({user.display_avatar.url})", inline=True)
+
+    decoration = raw.get('avatar_decoration_data')
+    if decoration:
+        decoration_url = f"{CDN}/avatar-decoration-presets/{decoration['asset']}.png?size=240&passthrough=true"
+        expires = f" • expires <t:{decoration['expires_at']}:R>" if decoration.get('expires_at') else ""
+        embed.add_field(name="✨ **Avatar Decoration**", value=f"[View]({decoration_url}){expires}", inline=True)
+    else:
+        embed.add_field(name="✨ **Avatar Decoration**", value="None", inline=True)
+
+    if nameplate:
+        base = f"{CDN}/assets/collectibles/{nameplate['asset']}"
+        embed.add_field(
+            name="🪧 **Nameplate**",
+            value=f"{nameplate.get('label') or 'Nameplate'}\n**Palette:** {(nameplate.get('palette') or 'default').title()} • [Image]({base}static.png) • [Animated]({base}asset.webm)"[:1024],
+            inline=False
+        )
+    else:
+        embed.add_field(name="🪧 **Nameplate**", value="None", inline=True)
+
+    styles = raw.get('display_name_styles')
+    if styles:
+        colors = " ".join(f"`#{c:06X}`" for c in styles.get('colors') or [])
+        embed.add_field(
+            name="🔤 **Display Name Style**",
+            value=f"**Font:** #{styles.get('font_id')}\n**Effect:** #{styles.get('effect_id')}\n**Colors:** {colors or 'Default'}",
+            inline=False
+        )
+    else:
+        embed.add_field(name="🔤 **Display Name Style**", value="Default", inline=True)
+
+    banner_value = f"[Open]({user.banner.url})" if user.banner else "None"
+    if user.accent_color:
+        banner_value += f" • Color `{user.accent_color}`"
+    embed.add_field(name="🎏 **Banner**", value=banner_value, inline=True)
+
+    embed.add_field(
+        name="🚫 **Not shared with bots**",
+        value="Profile theme, profile effect, bio and Nitro/boost badges - Discord only shows these in the app",
+        inline=False
+    )
+    return embed
+
+
 def profile_embed(member: discord.Member, user: discord.User = None) -> discord.Embed:
     """Discord profile information for a server member.
     user is the fetched User (only a fetched user carries the banner and accent color)."""

@@ -2,7 +2,7 @@ import discord
 from discord.ext import commands
 from database import RoxyDatabase
 from config import is_admin_id
-from info_embeds import server_overview_embed, profile_embed
+from info_embeds import server_overview_embed, profile_embed, global_profile_embed
 from datetime import datetime, timedelta
 import asyncio
 import re
@@ -1329,19 +1329,71 @@ class RoxyStats(commands.Cog):
             embed.set_footer(text=f"Requested by {ctx.author.display_name}", icon_url=ctx.author.display_avatar.url)
         await ctx.send(embed=embed)
 
-    @commands.command(name='profileinfo', aliases=['userinfo', 'whois'])
+    @commands.command(name='profileinfo', aliases=['userprofile', 'userinfo', 'whois'])
     @commands.guild_only()
     async def profile_info(self, ctx, member: discord.Member = None):
-        """Discord profile information for you or a member of this server"""
+        """Discord profile information for you or a member of this server - Server and Global views"""
         member = member or ctx.author
         try:
-            user = await self.bot.fetch_user(member.id)  # Banner and accent color are only on a fetched user
+            # Raw API data: banner and accent color, plus nameplate/name style/tag that discord.py 2.5 doesn't parse
+            raw = await self.bot.http.get_user(member.id)
+            user = discord.User(state=self.bot._connection, data=raw)
         except discord.HTTPException:
-            user = None
+            raw, user = None, None
 
-        embed = profile_embed(member, user)
-        embed.set_footer(text=f"Requested by {ctx.author.display_name} • Use rr profile for Roxy stats", icon_url=ctx.author.display_avatar.url)
-        await ctx.send(embed=embed)
+        views = {
+            'server': {'label': 'Server', 'emoji': '🏠', 'description': f'Profile in {ctx.guild.name}'[:100]},
+            'global': {'label': 'Global', 'emoji': '🌍', 'description': 'Badges, nameplate, decoration, name style, banner'},
+        }
+
+        def create_embed(view_key):
+            if view_key == 'global' and user:
+                embed = global_profile_embed(user, raw)
+            else:
+                embed = profile_embed(member, user)
+            embed.set_footer(text=f"Requested by {ctx.author.display_name} • Use rr profile for Roxy stats", icon_url=ctx.author.display_avatar.url)
+            return embed
+
+        class ProfileInfoSelect(discord.ui.Select):
+            def __init__(self, current):
+                options = [
+                    discord.SelectOption(label=info['label'], emoji=info['emoji'], description=info['description'], value=key, default=(key == current))
+                    for key, info in views.items()
+                ]
+                super().__init__(placeholder="👤 Choose a view...", min_values=1, max_values=1, options=options, row=0)
+
+            async def callback(self, interaction):
+                new_view = ProfileInfoView(self.values[0])
+                new_view.message = interaction.message
+                self.view.stop()  # Only the newest view stays alive
+                await interaction.response.edit_message(embed=create_embed(self.values[0]), view=new_view)
+
+        class ProfileInfoView(discord.ui.View):
+            def __init__(self, current):
+                super().__init__(timeout=300)
+                self.message = None
+                if user:
+                    self.add_item(ProfileInfoSelect(current))
+
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
+            async def close_menu(self, interaction, button):
+                self.stop()
+                await interaction.response.edit_message(view=None)
+
+            async def interaction_check(self, interaction):
+                if interaction.user.id != ctx.author.id:
+                    await interaction.response.send_message("❌ This menu isn't yours - use `rr profileinfo` to get your own.", ephemeral=True)
+                    return False
+                return True
+
+            async def on_timeout(self):
+                try:
+                    await self.message.edit(view=None)
+                except (AttributeError, discord.HTTPException):
+                    pass
+
+        view = ProfileInfoView('server')
+        view.message = await ctx.send(embed=create_embed('server'), view=view)
 
     def fit_field(self, text, limit=1024):
         """Fit a list field into Discord's limit by shortening names (bold titles, italic artists,

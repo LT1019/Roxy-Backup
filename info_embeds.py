@@ -155,12 +155,6 @@ def global_profile_embed(user: discord.User, raw: dict) -> discord.Embed:
     if user.accent_color:
         banner_value += f" • Color `{user.accent_color}`"
     embed.add_field(name="🎏 **Banner**", value=banner_value, inline=True)
-
-    embed.add_field(
-        name="🚫 **Not shared with bots**",
-        value="Profile theme, profile effect, bio and Nitro/boost badges - Discord only shows these in the app",
-        inline=False
-    )
     return embed
 
 

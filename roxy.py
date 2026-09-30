@@ -9,7 +9,7 @@ import time
 import psutil
 from datetime import datetime, timezone
 from dotenv import load_dotenv
-from database import RoxyDatabase
+from database import RoxyDatabase, OPTED_OUT
 from config import ADMIN_USER_ID, LINK_BUTTONS, is_admin, is_admin_id
 from patreon import xp_multiplier, get_patrons, get_patron_tier
 
@@ -56,6 +56,7 @@ class RoxyBot(commands.Bot):
 
         await self.load_extension('cogs.stats')
         await self.load_extension('cogs.admin')  # Load admin cog
+        await self.load_extension('cogs.privacy')
         print("🤖 Roxy's cogs loaded successfully!")
 
         # Register slash commands (/dbstats, /logs) with Discord
@@ -118,7 +119,7 @@ async def on_member_join(member):
     if member.guild.system_channel:
         embed = discord.Embed(
             title="🎉 Welcome to the server!",
-            description=f"Hey {member.mention}! I'm **Roxy**, your friendly stats bot. Use `rr help` to see what I can do!",
+            description=f"Hey {member.mention}! I'm **Roxy**, your friendly stats bot. Use `rr help` to see what I can do!\n\n🔒 I track message counts, games and Spotify activity for stats - see `rr privacy`, or `rr optout` to opt out.",
             color=discord.Color.purple()
         )
         embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
@@ -177,6 +178,12 @@ async def sync_member_activity(member):
     In-memory state is updated before any await so concurrent duplicate events see it.
     """
     user_id = member.id
+    if user_id in OPTED_OUT:
+        # Opted out (rr optout) - track nothing and forget anything in progress
+        roxy.active_sessions.pop(user_id, None)
+        roxy.active_listening.pop(user_id, None)
+        return
+    
     game, track = get_current_activity(member)
 
     # ==================== GAMING ====================
@@ -462,6 +469,12 @@ async def help_command(ctx, *, command=None):
     )
 
     embed.add_field(
+        name="🔒 Privacy",
+        value="`rr privacy` - What I store and your controls\n`rr mydata` - See your stored data\n`rr optout` / `rr optin` - Stop or resume tracking\n`rr deletemydata` - Erase your data",
+        inline=False
+    )
+    
+    embed.add_field(
         name="🤖 Bot Commands",
         value="`rr ping` - Check my response time\n`rr info` - Learn about me\n`rr help` - This menu",
         inline=False
@@ -691,7 +704,7 @@ early_adopters_checked = set()  # Users already checked this run - saves a datab
 async def on_command(ctx):
     """Grant Early Adopter to anyone who uses a Roxy command before 2027 (UTC)"""
     user = ctx.author
-    if user.bot or user.id in early_adopters_checked:
+    if user.bot or user.id in OPTED_OUT or user.id in early_adopters_checked:
         return
     if datetime.now(timezone.utc) >= EARLY_ADOPTER_DEADLINE:
         return

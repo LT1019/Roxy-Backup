@@ -4,6 +4,10 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple, Dict
 
+# Users who opted out of tracking. Shared by every RoxyDatabase instance and loaded from the
+# opt_outs table at startup - the tracking methods below store nothing for these users.
+OPTED_OUT = set()
+
 class RoxyDatabase:
     """Roxy Bot's database management system with progressive XP and music listening tracking"""
     
@@ -103,11 +107,26 @@ class RoxyDatabase:
                 )
             """)
             
+            # Users who opted out of tracking (rr optout)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS opt_outs (
+                    user_id INTEGER PRIMARY KEY,
+                    opted_out_at TEXT
+                )
+            """)
+            
             await db.commit()
+            
+            async with db.execute("SELECT user_id FROM opt_outs") as cursor:
+                OPTED_OUT.clear()
+                OPTED_OUT.update(row[0] for row in await cursor.fetchall())
             print("✅ Roxy's database initialized successfully!")
     
     async def add_user(self, user_id: int, username: str, display_name: str):
         """Add new user to Roxy's database"""
+        if user_id in OPTED_OUT:  # Opted out of tracking - store nothing
+            return
+        
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 # Check if user exists first
@@ -138,6 +157,9 @@ class RoxyDatabase:
     
     async def update_message_count(self, user_id: int, xp_multiplier: float = 1.0) -> int:
         """Update user's message count and XP with progressive leveling"""
+        if user_id in OPTED_OUT:  # Opted out of tracking - store nothing
+            return 0
+        
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 # Get current stats
@@ -202,6 +224,9 @@ class RoxyDatabase:
     
     async def start_game_session(self, user_id: int, game_name: str):
         """Roxy starts tracking a new game session"""
+        if user_id in OPTED_OUT:  # Opted out of tracking - store nothing
+            return
+        
         try:
             current_time = datetime.now().isoformat()
             
@@ -313,6 +338,9 @@ class RoxyDatabase:
     
     async def start_listening_session(self, user_id: int, song_title: str, artist_name: str, album_name: str = None):
         """Roxy starts tracking a new music listening session"""
+        if user_id in OPTED_OUT:  # Opted out of tracking - store nothing
+            return
+        
         try:
             current_time = datetime.now().isoformat()
             
@@ -1198,6 +1226,9 @@ class RoxyDatabase:
 
     async def give_achievement(self, user_id: int, achievement_name: str) -> bool:
         """Grant a custom achievement. Returns False if the user already has it."""
+        if user_id in OPTED_OUT:  # Opted out of tracking - store nothing
+            return False
+        
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 async with db.execute("""
@@ -1271,3 +1302,45 @@ class RoxyDatabase:
                     columns = [description[0] for description in cursor.description]
                     tables[table] = (columns, await cursor.fetchall())
         return tables
+
+    
+    # ==================== PRIVACY ====================
+    
+    USER_DATA_TABLES = ['game_sessions', 'listening_sessions', 'achievements', 'daily_stats', 'users']
+    
+    async def delete_user_data(self, user_id: int) -> Dict[str, int]:
+        """Permanently delete everything stored about a user. Returns rows deleted per table."""
+        deleted = {}
+        async with aiosqlite.connect(self.db_path) as db:
+            for table in self.USER_DATA_TABLES:
+                cursor = await db.execute(f"DELETE FROM {table} WHERE user_id = ?", (user_id,))
+                deleted[table] = cursor.rowcount
+            await db.commit()
+        return deleted
+    
+    async def opt_out(self, user_id: int) -> Dict[str, int]:
+        """Stop tracking a user and delete their data"""
+        OPTED_OUT.add(user_id)  # First, so nothing new is stored while deleting
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("INSERT OR REPLACE INTO opt_outs (user_id, opted_out_at) VALUES (?, ?)",
+                             (user_id, datetime.now().isoformat()))
+            await db.commit()
+        return await self.delete_user_data(user_id)
+    
+    async def opt_in(self, user_id: int) -> bool:
+        """Resume tracking. Returns False if the user wasn't opted out."""
+        was_opted_out = user_id in OPTED_OUT
+        OPTED_OUT.discard(user_id)
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM opt_outs WHERE user_id = ?", (user_id,))
+            await db.commit()
+        return was_opted_out
+    
+    async def get_user_data_summary(self, user_id: int) -> Dict[str, int]:
+        """How many rows each table holds about a user (for rr mydata)"""
+        summary = {}
+        async with aiosqlite.connect(self.db_path) as db:
+            for table in self.USER_DATA_TABLES:
+                async with db.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id = ?", (user_id,)) as cursor:
+                    summary[table] = (await cursor.fetchone())[0]
+        return summary

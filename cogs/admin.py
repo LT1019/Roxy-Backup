@@ -155,7 +155,7 @@ class DbStatsView(OwnerOnlyView):
 
         filename = f"roxy_export_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
         await interaction.followup.send(
-            content=f"📥 **Roxy database export** - {len(data) / 1024:,.0f} KB. Only you can see this file.",
+            content=f"📥 **Roxy database export** - {len(data) / 1024:,.0f} KB. Only you can see this file.\n⚠️ It contains personal data - keep it private and never share or sell it.",
             file=discord.File(io.BytesIO(data), filename=filename),
             ephemeral=True
         )
@@ -782,7 +782,7 @@ class RoxyAdmin(commands.Cog):
     async def reload_cogs(self, ctx):
         """Reload Roxy's cogs without restarting (Admin only)"""
         results = []
-        for extension in ['cogs.stats', 'cogs.admin']:
+        for extension in ['cogs.stats', 'cogs.admin', 'cogs.privacy']:
             try:
                 await self.bot.reload_extension(extension)
                 results.append(f"✅ `{extension}`")
@@ -871,6 +871,13 @@ class RoxyAdmin(commands.Cog):
                 value=f"🏠 **{d['total_servers']}** servers\n👥 **{d['total_users']}** total users\n📊 **{s.get('total_users', 0)}** tracked users\n🎮 **{d['active_gamers']}** currently gaming\n🎵 **{d['active_listeners']}** currently listening",
                 inline=not detailed
             )
+            # Discord blocks unverified bots at 100 servers - verification can be requested from 75
+            if d['total_servers'] >= 75:
+                embed.add_field(
+                    name="⚠️ **Verification needed**",
+                    value=f"Roxy is in **{d['total_servers']}** servers. Unverified bots can't join more than **100** - apply for verification and privileged intents in the Discord Developer Portal now.",
+                    inline=False
+                )
 
         def add_activity(embed, d, detailed):
             s = d['db']

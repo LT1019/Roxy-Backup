@@ -1,10 +1,8 @@
 # Roxy Privacy Policy
 
-**Effective date:** 30 September 2026
+**Effective date:** 1 October 2026
 
-Roxy is a Discord bot that tracks activity to provide levels, profiles, leaderboards and achievements. This policy explains what Roxy stores, why, and how you control it.
-
-In Discord, `rr privacy` shows a summary of this policy.
+Roxy is a Discord bot that tracks activity to provide levels, profiles, leaderboards and achievements. This policy explains what Roxy stores, why, and how you can have it deleted.
 
 ## What Roxy stores
 
@@ -43,20 +41,20 @@ Roxy's developer does not:
 
 Payments are handled entirely by Patreon. Roxy never receives your payment details. She only checks whether you have a supporter role in the Roxy Discord server.
 
-## Your controls
+## Seeing or deleting your data
 
-| Command | What it does |
-|---|---|
-| `rr mydata` | Shows what is stored about you |
-| `rr deletemydata` | Permanently deletes everything stored about you. Tracking continues from zero. |
-| `rr optout` | Permanently deletes everything stored about you **and** stops all tracking, in every server |
-| `rr optin` | Resumes tracking after an opt-out |
+You can ask Roxy's developer to:
 
-Deletion is immediate and cannot be undone. You can also ask for deletion in the Roxy support server.
+- **tell you what is stored** about you, or
+- **permanently delete** everything stored about you.
+
+To make a request, join the Roxy support server through the **Support** button under `rr help` and ask there. Requests are handled as soon as possible, and within 30 days at most.
+
+Deletion cannot be undone. If you keep using Discord in servers where Roxy is present, she starts tracking your activity again from zero.
 
 ## How long data is kept
 
-Your data is kept until you delete it or opt out. Records for users with no activity at all may be removed during maintenance.
+Your data is kept until you ask for it to be deleted. Records for users with no activity at all may be removed during maintenance.
 
 ## Security
 

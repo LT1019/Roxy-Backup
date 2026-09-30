@@ -212,7 +212,7 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="👥 User Management",
-            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr viewuser <@user>` - View detailed user data",
+            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr deleteuser <@user or ID>` - Erase all their data (deletion requests)\n`rr viewuser <@user>` - View detailed user data",
             inline=False
         )
         
@@ -614,6 +614,20 @@ class RoxyAdmin(commands.Cog):
         self.bot.active_listening.pop(member.id, None)
         await ctx.send(f"🔄 Reset all stats for {member.display_name}.")
 
+    @commands.command(name='deleteuser')
+    @is_admin()
+    async def delete_user(self, ctx, user: discord.User):
+        """Permanently delete everything stored about a user - for data deletion requests (Admin only)"""
+        if not await confirm_action(ctx, f"**Permanently delete** all data Roxy stores about {user} (`{user.id}`)? Level, XP, sessions and achievements will be erased. This can't be undone."):
+            return
+
+        self.bot.active_sessions.pop(user.id, None)
+        self.bot.active_listening.pop(user.id, None)
+        deleted = await self.db.delete_user_data(user.id)
+        details = ", ".join(f"{count} {table.replace('_', ' ')}" for table, count in deleted.items() if count)
+        await ctx.send(f"🗑️ Deleted all data for {user} (`{user.id}`): {details or 'nothing was stored'}.\n"
+                       "ℹ️ Roxy starts tracking them again from zero if they keep using Discord where she is.")
+
     @commands.command(name='viewuser')
     @is_admin()
     async def view_user(self, ctx, member: discord.Member):
@@ -782,7 +796,7 @@ class RoxyAdmin(commands.Cog):
     async def reload_cogs(self, ctx):
         """Reload Roxy's cogs without restarting (Admin only)"""
         results = []
-        for extension in ['cogs.stats', 'cogs.admin', 'cogs.privacy']:
+        for extension in ['cogs.stats', 'cogs.admin']:
             try:
                 await self.bot.reload_extension(extension)
                 results.append(f"✅ `{extension}`")

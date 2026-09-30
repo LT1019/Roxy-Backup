@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from database import RoxyDatabase, OPTED_OUT
+from database import RoxyDatabase
 from config import is_admin_id
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
 from patreon import get_patron_tier
@@ -95,12 +95,6 @@ class RoxyStats(commands.Cog):
     async def send_profile_with_navigation(self, ctx, member, initial_view):
         """Send profile information with interactive navigation dropdown"""
         
-        if member.id in OPTED_OUT:
-            who = "You've" if member.id == ctx.author.id else f"{member.display_name} has"
-            hint = " Use `rr optin` to be tracked again." if member.id == ctx.author.id else ""
-            await ctx.send(f"🔒 {who} opted out of Roxy's tracking, so there's no profile to show.{hint}")
-            return
-
         stats = await self.db.get_user_stats(member.id)
 
         if not stats:

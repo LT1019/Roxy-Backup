@@ -680,107 +680,189 @@ class RoxyAdmin(commands.Cog):
     @commands.command(name='totalstats')
     @is_admin()
     async def global_statistics(self, ctx):
-        """Comprehensive global statistics (Admin only)"""
-        try:
-            # Get database statistics
-            db_stats = await self.db.get_database_stats()
-            
-            # Calculate additional metrics
-            total_users = len(self.bot.users)
-            total_servers = len(self.bot.guilds)
-            active_gamers = len(getattr(self.bot, 'active_sessions', {}))
-            active_listeners = len(getattr(self.bot, 'active_listening', {}))
-            
-            # Create comprehensive stats embed
-            embed = discord.Embed(
-                title="📊 Roxy Bot Global Statistics",
-                description="**Complete overview of Roxy Bot's performance and usage**",
-                color=discord.Color.gold()
-            )
-            
-            # === GLOBAL METRICS ===
+        """Global statistics with a dropdown to view each section (Admin only)"""
+        bot = self.bot
+        db = self.db
+
+        sections = {
+            'all': {'label': 'All', 'emoji': '📊', 'description': 'Everything at a glance'},
+            'reach': {'label': 'Global Reach', 'emoji': '🌍', 'description': 'Servers, users and live activity'},
+            'activity': {'label': 'Activity Metrics', 'emoji': '📈', 'description': 'Messages, gaming and listening totals'},
+            'progression': {'label': 'Progression', 'emoji': '🏆', 'description': 'Levels and XP'},
+            'servers': {'label': 'Top Servers', 'emoji': '🏠', 'description': 'Biggest servers Roxy is in'},
+            'performance': {'label': 'Bot Performance', 'emoji': '⚡', 'description': 'Uptime, CPU, RAM and latency'},
+            'insights': {'label': 'Activity Insights', 'emoji': '🎮', 'description': 'Averages per user and session'},
+            'achievements': {'label': 'Achievements', 'emoji': '🏅', 'description': 'Achievement system summary'},
+        }
+        state = {'section': 'all'}
+
+        async def gather():
+            """Collect fresh numbers every time the view changes"""
+            db_stats = await db.get_database_stats()
+            uptime = time.time() - bot.start_time if getattr(bot, 'start_time', 0) else 0.0
+            memory = psutil.virtual_memory()
+            return {
+                'db': db_stats,
+                'total_users': len(bot.users),
+                'total_servers': len(bot.guilds),
+                'active_gamers': len(getattr(bot, 'active_sessions', {})),
+                'active_listeners': len(getattr(bot, 'active_listening', {})),
+                'uptime': uptime,
+                'cpu': psutil.cpu_percent(),
+                'memory_mb': memory.used // 1024 // 1024,
+                'memory_percent': memory.percent,
+                'roxy_memory_mb': psutil.Process().memory_info().rss // 1024 // 1024,
+                'latency': round(bot.latency * 1000) if bot.latency == bot.latency else 0,  # NaN while reconnecting
+            }
+
+        def add_reach(embed, d, detailed):
+            s = d['db']
             embed.add_field(
                 name="🌍 **Global Reach**",
-                value=f"🏠 **{total_servers}** servers\n👥 **{total_users}** total users\n📊 **{db_stats.get('total_users', 0)}** tracked users\n🎮 **{active_gamers}** currently gaming\n🎵 **{active_listeners}** currently listening",
-                inline=True
+                value=f"🏠 **{d['total_servers']}** servers\n👥 **{d['total_users']}** total users\n📊 **{s.get('total_users', 0)}** tracked users\n🎮 **{d['active_gamers']}** currently gaming\n🎵 **{d['active_listeners']}** currently listening",
+                inline=not detailed
             )
-            
-            # === ACTIVITY METRICS ===
+
+        def add_activity(embed, d, detailed):
+            s = d['db']
             embed.add_field(
                 name="📈 **Activity Metrics**",
-                value=f"💬 **{db_stats.get('total_messages', 0):,}** total messages\n⏱️ **{db_stats.get('total_playtime_hours', 0):,}h** total gaming\n🎵 **{db_stats.get('total_listening_hours', 0):,}h** total listening\n🎲 **{db_stats.get('total_sessions', 0):,}** gaming sessions\n🎶 **{db_stats.get('total_listening_sessions', 0):,}** listening sessions\n📅 **{db_stats.get('active_users', 0)}** active this week",
-                inline=True
+                value=f"💬 **{s.get('total_messages', 0):,}** total messages\n⏱️ **{s.get('total_playtime_hours', 0):,}h** total gaming\n🎵 **{s.get('total_listening_hours', 0):,}h** total listening\n🎲 **{s.get('total_sessions', 0):,}** gaming sessions\n🎶 **{s.get('total_listening_sessions', 0):,}** listening sessions\n📅 **{s.get('active_users', 0)}** active this week",
+                inline=not detailed
             )
-            
-            # === PROGRESSION STATS ===
+
+        def add_progression(embed, d, detailed):
+            s = d['db']
             embed.add_field(
                 name="🏆 **Progression Stats**",
-                value=f"⭐ **Level {db_stats.get('highest_level', 1)}** highest level\n📊 **{db_stats.get('avg_level', 1.0):.1f}** average level\n✨ **{db_stats.get('max_xp', 0):,}** highest XP\n🎯 **{db_stats.get('max_xp', 0) // 5:,}** equivalent messages",
-                inline=True
+                value=f"⭐ **Level {s.get('highest_level', 1)}** highest level\n📊 **{s.get('avg_level', 1.0):.1f}** average level\n✨ **{s.get('max_xp', 0):,}** highest XP\n🎯 **{s.get('max_xp', 0) // 5:,}** equivalent messages",
+                inline=not detailed
             )
-            
-            # === SERVER BREAKDOWN ===
-            server_info = ""
-            top_servers = sorted(list(self.bot.guilds), key=lambda g: g.member_count, reverse=True)[:5]
-            for i, guild in enumerate(top_servers, 1):
-                server_info += f"**{i}.** {guild.name} - {guild.member_count} members\n"
-            
+
+        def add_servers(embed, d, detailed):
+            count = 10 if detailed else 5
+            top_servers = sorted(bot.guilds, key=lambda g: g.member_count or 0, reverse=True)[:count]
+            server_info = "\n".join(f"**{i}.** {guild.name} - {guild.member_count} members" for i, guild in enumerate(top_servers, 1))
             embed.add_field(
-                name="🏠 **Top 5 Servers by Members**",
-                value=server_info.strip() or "No servers found",
+                name=f"🏠 **Top {count} Servers by Members**",
+                value=server_info or "No servers found",
                 inline=False
             )
-            
-            # === PERFORMANCE METRICS ===
-            import psutil
-            import time
-            
-            # Get system metrics
-            uptime = 0.0
-            if hasattr(self.bot, 'start_time') and self.bot.start_time:
-                uptime = time.time() - self.bot.start_time
-            uptime_hours = int(uptime // 3600)
-            uptime_mins = int((uptime % 3600) // 60)
-            
-            cpu_percent = psutil.cpu_percent()
-            memory = psutil.virtual_memory()
-            memory_mb = memory.used // 1024 // 1024
-            
-            embed.add_field(
-                name="⚡ **Bot Performance**",
-                value=f"🕐 **{uptime_hours}h {uptime_mins}m** uptime\n🧠 **{memory_mb}MB** RAM usage\n💻 **{cpu_percent:.1f}%** CPU usage\n📡 **{round(self.bot.latency * 1000)}ms** latency",
-                inline=True
-            )
-            
-            # === ACTIVITY INSIGHTS ===
-            avg_gaming_session_hours = db_stats.get('total_playtime_hours', 0) / max(db_stats.get('total_sessions', 1), 1)
-            avg_listening_session_hours = db_stats.get('total_listening_hours', 0) / max(db_stats.get('total_listening_sessions', 1), 1)
-            messages_per_user = db_stats.get('total_messages', 0) / max(db_stats.get('total_users', 1), 1)
-            
+
+        def add_performance(embed, d, detailed):
+            uptime_text = f"{int(d['uptime'] // 3600)}h {int((d['uptime'] % 3600) // 60)}m"
+            value = f"🕐 **{uptime_text}** uptime\n🧠 **{d['memory_mb']}MB** RAM usage\n💻 **{d['cpu']:.1f}%** CPU usage\n📡 **{d['latency']}ms** latency"
+            if detailed:
+                value += f"\n📦 **{d['roxy_memory_mb']}MB** used by Roxy\n📊 **{d['memory_percent']:.1f}%** system RAM in use\n🧩 **{len(bot.cogs)}** cogs loaded"
+            embed.add_field(name="⚡ **Bot Performance**", value=value, inline=not detailed)
+
+        def add_insights(embed, d, detailed):
+            s = d['db']
+            avg_gaming_session_hours = s.get('total_playtime_hours', 0) / max(s.get('total_sessions', 1), 1)
+            avg_listening_session_hours = s.get('total_listening_hours', 0) / max(s.get('total_listening_sessions', 1), 1)
+            messages_per_user = s.get('total_messages', 0) / max(s.get('total_users', 1), 1)
             embed.add_field(
                 name="🎮🎵 **Activity Insights**",
-                value=f"⏱️ **{avg_gaming_session_hours:.1f}h** avg gaming session\n🎶 **{avg_listening_session_hours:.1f}h** avg listening session\n📝 **{messages_per_user:.0f}** avg messages per user\n🎯 **{(db_stats.get('total_playtime_hours', 0) / max(total_users, 1)):.1f}h** avg gaming per user\n🎵 **{(db_stats.get('total_listening_hours', 0) / max(total_users, 1)):.1f}h** avg listening per user\n📊 **{(db_stats.get('active_users', 0) / max(db_stats.get('total_users', 1), 1) * 100):.1f}%** weekly activity rate",
-                inline=True
+                value=f"⏱️ **{avg_gaming_session_hours:.1f}h** avg gaming session\n🎶 **{avg_listening_session_hours:.1f}h** avg listening session\n📝 **{messages_per_user:.0f}** avg messages per user\n🎯 **{(s.get('total_playtime_hours', 0) / max(d['total_users'], 1)):.1f}h** avg gaming per user\n🎵 **{(s.get('total_listening_hours', 0) / max(d['total_users'], 1)):.1f}h** avg listening per user\n📊 **{(s.get('active_users', 0) / max(s.get('total_users', 1), 1) * 100):.1f}%** weekly activity rate",
+                inline=not detailed
             )
-            
-            # === ACHIEVEMENTS & MILESTONES ===
+
+        def add_achievements(embed, d, detailed):
             embed.add_field(
                 name="🏆 **Achievements & Milestones**",
-                value=f"🎖️ **44** total achievement types\n🏅 **5** achievement categories\n🎮 **Gaming** tracking system\n🎵 **Music** listening tracking\n💎 **Level 1000** highest possible title\n⚡ **Infinite** leveling system",
-                inline=True
+                value="🎖️ **44** total achievement types\n🏅 **5** achievement categories\n🎮 **Gaming** tracking system\n🎵 **Music** listening tracking\n💎 **Level 1000** highest possible title\n⚡ **Infinite** leveling system",
+                inline=not detailed
             )
-            
-            # === FOOTER ===
+
+        builders = {
+            'reach': add_reach,
+            'activity': add_activity,
+            'progression': add_progression,
+            'servers': add_servers,
+            'performance': add_performance,
+            'insights': add_insights,
+            'achievements': add_achievements,
+        }
+
+        async def create_stats_embed():
+            data = await gather()
+            info = sections[state['section']]
+
+            if state['section'] == 'all':
+                embed = discord.Embed(
+                    title="📊 Roxy Bot Global Statistics",
+                    description="**Complete overview of Roxy Bot's performance and usage**",
+                    color=discord.Color.gold()
+                )
+                for add_section in builders.values():
+                    add_section(embed, data, detailed=False)
+            else:
+                embed = discord.Embed(
+                    title=f"{info['emoji']} {info['label']}",
+                    description=f"**{info['description']}**",
+                    color=discord.Color.gold()
+                )
+                builders[state['section']](embed, data, detailed=True)
+
             embed.set_footer(
-                text=f"👑 Generated by {ctx.author.display_name} • Last updated: Now",
-                icon_url=ctx.author.avatar.url if ctx.author.avatar else ctx.author.default_avatar.url
+                text=f"👑 Generated by {ctx.author.display_name} • Use the dropdown to view each section",
+                icon_url=ctx.author.display_avatar.url
             )
-            
-            if self.bot.user:
-                embed.set_thumbnail(url=self.bot.user.avatar.url if self.bot.user.avatar else self.bot.user.default_avatar.url)
-            
-            await ctx.send(embed=embed)
-            
+            if bot.user:
+                embed.set_thumbnail(url=bot.user.display_avatar.url)
+            return embed
+
+        class StatsSelect(discord.ui.Select):
+            def __init__(self):
+                options = [
+                    discord.SelectOption(label=info['label'], emoji=info['emoji'], description=info['description'],
+                                         value=key, default=(key == state['section']))
+                    for key, info in sections.items()
+                ]
+                super().__init__(placeholder="📊 Choose a statistics section...", min_values=1, max_values=1, options=options, row=0)
+
+            async def callback(self, interaction):
+                state['section'] = self.values[0]
+                await self.view.refresh(interaction)
+
+        class StatsView(OwnerOnlyView):
+            def __init__(self):
+                super().__init__(ctx.author.id, timeout=300)
+                self.add_item(StatsSelect())
+
+            async def refresh(self, interaction):
+                embed = await create_stats_embed()
+                new_view = StatsView()
+                new_view.message = interaction.message
+                self.stop()  # Only the newest view stays alive
+                await interaction.response.edit_message(embed=embed, view=new_view)
+
+            @discord.ui.button(label='🔄 Refresh', style=discord.ButtonStyle.primary, row=1)
+            async def refresh_button(self, interaction, button):
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
+            async def close_menu(self, interaction, button):
+                self.stop()
+                await interaction.response.edit_message(
+                    embed=discord.Embed(
+                        title="📊 Statistics Closed",
+                        description="Use `!r totalstats` to open again.",
+                        color=discord.Color.red()
+                    ),
+                    view=None
+                )
+
+            async def on_timeout(self):
+                try:
+                    await self.message.edit(view=None)
+                except (AttributeError, discord.HTTPException):
+                    pass
+
+        try:
+            embed = await create_stats_embed()
+            view = StatsView()
+            view.message = await ctx.send(embed=embed, view=view)
         except Exception as e:
             await ctx.send(f"❌ Error generating global statistics: {e}")
             print(f"❌ Error in totalstats: {e}")

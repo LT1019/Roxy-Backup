@@ -1265,12 +1265,60 @@ class RoxyAdmin(commands.Cog):
         sections = {
             'overview': {'label': 'Overview', 'emoji': '🏠', 'description': 'Server information'},
             'members': {'label': 'Members', 'emoji': '👥', 'description': 'Everyone who has joined, oldest first'},
+            'channels': {'label': 'Channels', 'emoji': '💬', 'description': 'Text, announcement and forum channels'},
+            'voice': {'label': 'Voice', 'emoji': '🔊', 'description': 'Voice and stage channels'},
             'roxy': {'label': 'Roxy Stats', 'emoji': '📊', 'description': "This server's activity tracked by Roxy"},
         }
         state = {'section': 'overview', 'page': 1, 'pages': 1}
 
         def create_overview_embed():
             return server_overview_embed(guild)
+
+        CHANNELS_PER_PAGE = 30
+        PAGED_SECTIONS = ('members', 'channels', 'voice')
+
+        def create_channel_list_embed(voice):
+            """Channels grouped by category; 🔒 = members can't see it"""
+            def icon(channel):
+                if isinstance(channel, discord.StageChannel):
+                    return '🎙️'
+                if isinstance(channel, discord.VoiceChannel):
+                    return '🔊'
+                if isinstance(channel, discord.ForumChannel):
+                    return '💬'
+                if getattr(channel, 'is_news', lambda: False)():
+                    return '📢'
+                return '#'
+
+            def is_hidden(channel):
+                return not channel.permissions_for(guild.default_role).view_channel
+
+            kinds = (discord.VoiceChannel, discord.StageChannel) if voice else (discord.TextChannel, discord.ForumChannel)
+            lines, total, hidden = [], 0, 0
+            for category, channels in guild.by_category():
+                channels = [c for c in channels if isinstance(c, kinds)]
+                if not channels:
+                    continue
+                lines.append(f"**📁 {discord.utils.escape_markdown(category.name)}**" if category else "**📁 No category**")
+                for channel in channels:
+                    total += 1
+                    lock = ""
+                    if is_hidden(channel):
+                        hidden += 1
+                        lock = "🔒 "
+                    extra = f" • {len(channel.members)} in call" if voice and channel.members else ""
+                    lines.append(f"{lock}{icon(channel)} {discord.utils.escape_markdown(channel.name)}{extra}")
+
+            state['pages'] = max(1, (len(lines) + CHANNELS_PER_PAGE - 1) // CHANNELS_PER_PAGE)
+            state['page'] = min(max(state['page'], 1), state['pages'])
+            start = (state['page'] - 1) * CHANNELS_PER_PAGE
+            kind = ("voice channel" if voice else "channel") + ("" if total == 1 else "s")
+            body = "\n".join(lines[start:start + CHANNELS_PER_PAGE]) or f"No {kind}"
+            return discord.Embed(
+                title=f"{'🔊 Voice' if voice else '💬 Channels'} in {guild.name}",
+                description=f"**{total}** {kind} • 🔒 **{hidden}** hidden from members\n\n{body}"[:4096],
+                color=discord.Color.blurple()
+            )
 
         def create_members_embed():
             members = sorted(guild.members, key=lambda m: m.joined_at or discord.utils.utcnow())
@@ -1334,10 +1382,12 @@ class RoxyAdmin(commands.Cog):
                 embed = create_overview_embed()
             elif state['section'] == 'members':
                 embed = create_members_embed()
+            elif state['section'] in ('channels', 'voice'):
+                embed = create_channel_list_embed(voice=state['section'] == 'voice')
             else:
                 embed = await create_roxy_embed()
 
-            page_text = f"Page {state['page']}/{state['pages']} • " if state['section'] == 'members' else ""
+            page_text = f"Page {state['page']}/{state['pages']} • " if state['section'] in PAGED_SECTIONS else ""
             embed.set_footer(text=f"👑 {page_text}Server ID {guild.id} • Use the dropdown to switch views")
             return embed
 
@@ -1360,8 +1410,8 @@ class RoxyAdmin(commands.Cog):
                 super().__init__(ctx.author.id, timeout=300)
                 self.add_item(ServerSelect())
 
-                # Page buttons only on the member list
-                if state['section'] == 'members':
+                # Page buttons on the member and channel lists, when there's more than one page
+                if state['section'] in PAGED_SECTIONS and state['pages'] > 1:
                     self.previous_page.disabled = state['page'] <= 1
                     self.next_page.disabled = state['page'] >= state['pages']
                 else:

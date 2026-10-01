@@ -356,6 +356,28 @@ class RoxyAdmin(commands.Cog):
                     "`Session Master` - 100+ gaming sessions"
                 ]
             },
+            "Voice Achievements": {
+                "emoji": "🎙️",
+                "color": 0x5865f2,
+                "achievements": [
+                    "`First Call` - 1+ hour in voice channels",
+                    "`Chatty Caller` - 10+ hours in voice channels",
+                    "`Voice Regular` - 50+ hours in voice channels",
+                    "`Voice Veteran` - 100+ hours in voice channels",
+                    "`Voice Legend` - 500+ hours in voice channels"
+                ]
+            },
+            "App Achievements": {
+                "emoji": "💻",
+                "color": 0x1abc9c,
+                "achievements": [
+                    "`App Explorer` - 1+ hour in apps",
+                    "`Power User` - 10+ hours in apps",
+                    "`Productivity Pro` - 50+ hours in apps",
+                    "`App Master` - 100+ hours in apps",
+                    "`Digital Legend` - 500+ hours in apps"
+                ]
+            },
             "Special Achievements": {
                 "emoji": "👑",
                 "color": 0xe74c3c,
@@ -398,6 +420,8 @@ class RoxyAdmin(commands.Cog):
                 "Gaming Achievements": "💡 **Tip:** Set your Discord status to 'Playing [Game]' to track sessions",
                 "Music Achievements": "💡 **Tip:** Listen to Spotify to track music sessions automatically",
                 "Social Achievements": "💡 **Tip:** Stay active in chat and participate in gaming sessions",
+                "Voice Achievements": "💡 **Tip:** Time in any voice channel counts - except a server's AFK channel",
+                "App Achievements": "💡 **Tip:** Time in apps like VS Code, YouTube or Netflix counts when Discord shows them as your activity",
                 "Special Achievements": "💡 **Tip:** Early Adopter is automatic for anyone using Roxy before 2027 (UTC) - the rest are granted manually"
             }
             
@@ -630,7 +654,7 @@ class RoxyAdmin(commands.Cog):
 
         tracked_game = self.bot.active_sessions.get(member.id)
         tracked_song = self.bot.active_listening.get(member.id)
-        lines.append(f"\n**Roxy is tracking:** game = {tracked_game or 'nothing'}, music = {tracked_song['song'] + ' by ' + tracked_song['artist'] if tracked_song else 'nothing'}, app = {self.bot.active_apps.get(member.id) or 'nothing'}")
+        lines.append(f"\n**Roxy is tracking:** game = {tracked_game or 'nothing'}, music = {tracked_song['song'] + ' by ' + tracked_song['artist'] if tracked_song else 'nothing'}, app = {self.bot.active_apps.get(member.id) or 'nothing'}, voice = {'in a call' if member.id in self.bot.active_voice else 'no'}")
 
         embed = discord.Embed(title=f"📡 What Roxy sees: {member.display_name}", description="\n".join(lines)[:4096], color=discord.Color.blurple())
         embed.set_footer(text="Empty activities while you're playing = Discord privacy settings are hiding them")
@@ -863,6 +887,11 @@ class RoxyAdmin(commands.Cog):
         self.bot.active_apps.clear()
         for user_id in apps:
             await self.db.end_app_session(user_id)
+
+        voice = list(self.bot.active_voice)
+        self.bot.active_voice.clear()
+        for user_id in voice:
+            await self.db.end_voice_session(user_id)
         return len(games), len(listens)
 
     # Advanced Admin Commands
@@ -979,7 +1008,7 @@ class RoxyAdmin(commands.Cog):
         def add_achievements(embed, d, detailed):
             embed.add_field(
                 name="🏆 **Achievements & Milestones**",
-                value="🎖️ **44** total achievement types\n🏅 **5** achievement categories\n🎮 **Gaming** tracking system\n🎵 **Music** listening tracking\n💎 **Level 1000** highest possible title\n⚡ **Infinite** leveling system",
+                value="🎖️ **54** total achievement types\n🏅 **7** achievement categories\n🎮 **Gaming** tracking system\n🎵 **Music** listening tracking\n💎 **Level 1000** highest possible title\n⚡ **Infinite** leveling system",
                 inline=not detailed
             )
 

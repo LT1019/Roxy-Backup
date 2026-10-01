@@ -43,6 +43,7 @@ class RoxyBot(commands.Bot):
         self.active_sessions = {}  # Gaming sessions
         self.active_listening = {}  # Music listening sessions
         self.active_apps = {}  # Non-game app sessions (VS Code, YouTube, ...)
+        self.active_voice = {}  # Voice sessions: user_id -> guild_id of the call
         self.start_time: float = 0.0  # Add start_time attribute with type hint
         self.custom_status = None  # Set by rr setstatus - pauses the rotating status
 
@@ -99,7 +100,16 @@ async def on_ready():
                 await sync_member_activity(member)
             except Exception as e:
                 print(f"❌ Error syncing activity for {member}: {e}")
-    print(f"🔄 Synced activity: {len(roxy.active_sessions)} gaming, {len(roxy.active_listening)} listening, {len(roxy.active_apps)} apps")
+    # Everyone already in a voice call (checked per server - a call can be in any of them)
+    for guild in roxy.guilds:
+        for channel in guild.voice_channels + guild.stage_channels:
+            for member in channel.members:
+                if not member.bot:
+                    try:
+                        await sync_member_voice(member, member.voice)
+                    except Exception as e:
+                        print(f"❌ Error syncing voice for {member}: {e}")
+    print(f"🔄 Synced activity: {len(roxy.active_sessions)} gaming, {len(roxy.active_listening)} listening, {len(roxy.active_apps)} apps, {len(roxy.active_voice)} in voice")
 
     # Start Roxy's background tasks (already running after a reconnect)
     if not update_roxy_status.is_running():
@@ -228,6 +238,50 @@ async def sync_member_activity(member):
         if track:
             await roxy.db.add_user(member.id, str(member), member.display_name)
             await roxy.db.start_listening_session(user_id, track['song'], track['artist'], track['album'])
+
+def counted_voice_channel(voice_state, guild):
+    """The voice channel that counts as call time - None when not in voice or in the AFK channel"""
+    channel = voice_state.channel if voice_state else None
+    if channel is None or channel == guild.afk_channel:
+        return None
+    return channel
+
+async def sync_member_voice(member, voice_state):
+    """Start or end a voice session when someone joins, leaves or switches servers.
+    Moving between channels in the same server continues the same session."""
+    user_id = member.id
+    channel = counted_voice_channel(voice_state, member.guild)
+    tracked = roxy.active_voice.get(user_id)
+    current = member.guild.id if channel else None
+
+    # Leaving voice in one server doesn't end a call that's already running in another one
+    if current is None and tracked is not None and tracked != member.guild.id:
+        return
+    if current == tracked:
+        return
+
+    if tracked is not None:
+        del roxy.active_voice[user_id]
+    if current is not None:
+        roxy.active_voice[user_id] = current
+
+    if tracked is not None:
+        await roxy.db.end_voice_session(user_id)
+    if current is not None:
+        await roxy.db.add_user(member.id, str(member), member.display_name)
+        await roxy.db.start_voice_session(user_id, member.guild.id, channel.name)
+
+@roxy.event
+async def on_voice_state_update(member, before, after):
+    """Roxy tracks time in voice channels"""
+    if member.bot:
+        return
+    try:
+        await sync_member_voice(member, after)
+    except Exception as e:
+        print(f"❌ Error in on_voice_state_update: {e}")
+        import traceback
+        traceback.print_exc()
 
 @roxy.event
 async def on_presence_update(before, after):

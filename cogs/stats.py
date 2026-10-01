@@ -234,49 +234,56 @@ class RoxyStats(commands.Cog):
             
             # === ACTIVITY STATS SECTION ===
             app_seconds = (await self.db.get_app_stats(member.id))['total_seconds']
+            voice_seconds = (await self.db.get_voice_stats(member.id))['total_seconds']
+            total_tracked_seconds = (total_playtime or 0) + app_seconds + (total_listening_time or 0)
             if is_admin:
                 rank_title = "🔱 Bot Administrator"
             else:
                 rank_title = self.get_rank_title(level)
-                
-            activity_stats = f"""
-            📝 **{total_messages:,}** Messages
-            🎮 **{hours}h {minutes}m** Gaming
-            💻 **{app_seconds // 3600}h {(app_seconds % 3600) // 60}m** Apps
-            🎵 **{listening_hours}h {listening_minutes}m** Listening
-            🎯 **{rank_title}**
-            """
-            
+
+            # Left column: talking and totals - right column: where the time went
             embed.add_field(
-                name="📊 **Activity Overview**",
-                value=activity_stats.strip(),
+                name="📊 **Activity**",
+                value=f"📝 **{total_messages:,}** Messages\n🎙️ **{voice_seconds // 3600}h {(voice_seconds % 3600) // 60}m** Voice\n⏱️ **{total_tracked_seconds // 3600}h {(total_tracked_seconds % 3600) // 60}m** Total\n🎯 **{rank_title}**",
                 inline=True
             )
-            
+            embed.add_field(
+                name="⏱️ **Time Tracked**",
+                value=f"🎮 **{hours}h {minutes}m** Gaming\n💻 **{app_seconds // 3600}h {(app_seconds % 3600) // 60}m** Apps\n🎵 **{listening_hours}h {listening_minutes}m** Listening",
+                inline=True
+            )
+
             # === CURRENT STATUS SECTION ===
             status_lines = []
-            
+
             if current_game:
                 status_lines.append(f"🎮 Playing **{current_game}**")
-            
+
+            current_app = self.bot.active_apps.get(member.id)
+            if current_app:
+                status_lines.append(f"💻 Using **{current_app}**")
+
             if current_song and current_artist:
                 status_lines.append(f"🎵 Listening to **{current_song}** by **{current_artist}**")
-            
+
+            if member.id in self.bot.active_voice:
+                status_lines.append("🎙️ In a voice call")
+
             if not status_lines:
                 if is_admin:
                     status_lines.append("💤 Managing Roxy Bot 🔧")
                 else:
                     status_lines.append("💤 Offline")
-            
+
             if is_admin:
                 status_text = "\n".join(status_lines) + " 👑"
             else:
                 status_text = "\n".join(status_lines)
-            
+
             embed.add_field(
                 name="🔴 **Live Status**",
                 value=status_text,
-                inline=True
+                inline=False
             )
             
             # === TIMELINE SECTION ===
@@ -300,7 +307,8 @@ class RoxyStats(commands.Cog):
                     print(f"❌ Error parsing timeline dates: {e}")
             
             # === ACHIEVEMENTS SECTION ===
-            achievements = self.get_achievements(level, total_messages, hours, listening_hours, is_admin)
+            achievements = self.get_achievements(level, total_messages, hours, listening_hours, is_admin,
+                                                 voice_hours=voice_seconds // 3600, app_hours=app_seconds // 3600)
             if achievements:
                 embed.add_field(
                     name="🏆 **Recent Achievements**",
@@ -1563,14 +1571,33 @@ class RoxyStats(commands.Cog):
         else:
             return "New Listener 🎺"
     
-    def get_achievements(self, level, messages, gaming_hours, listening_hours, is_admin=False):
+    def get_voice_achievement(self, hours):
+        """Highest voice call milestone reached"""
+        for threshold, name in ((500, "📡 Voice Legend (500+ hours)"), (100, "🗣️ Voice Veteran (100+ hours)"),
+                                (50, "🎧 Voice Regular (50+ hours)"), (10, "📞 Chatty Caller (10+ hours)"),
+                                (1, "🎙️ First Call (1+ hour)")):
+            if hours >= threshold:
+                return name
+        return None
+
+    def get_app_achievement(self, hours):
+        """Highest app usage milestone reached"""
+        for threshold, name in ((500, "🧠 Digital Legend (500+ hours)"), (100, "🚀 App Master (100+ hours)"),
+                                (50, "🖥️ Productivity Pro (50+ hours)"), (10, "⌨️ Power User (10+ hours)"),
+                                (1, "💻 App Explorer (1+ hour)")):
+            if hours >= threshold:
+                return name
+        return None
+
+    def get_achievements(self, level, messages, gaming_hours, listening_hours, is_admin=False, voice_hours=0, app_hours=0):
         """Get recent achievements to display"""
         achievements = []
-        
+        extra = [a for a in (self.get_voice_achievement(voice_hours), self.get_app_achievement(app_hours)) if a]
+
         # Admin-specific achievements
         if is_admin:
             achievements.append("👑 Roxy Bot Administrator")
-            return "\n".join([f"• {achievement}" for achievement in achievements])
+            return "\n".join([f"• {achievement}" for achievement in achievements + extra])
         
         # Level-based achievements
         if level >= 20:
@@ -1604,8 +1631,10 @@ class RoxyStats(commands.Cog):
         elif listening_hours >= 20:
             achievements.append("🎤 Active Listener")
         
-        # Return max 3 achievements for non-admins
-        return "\n".join([f"• {achievement}" for achievement in achievements[:3]]) if achievements else None
+        achievements += extra
+
+        # Return max 5 achievements for non-admins
+        return "\n".join([f"• {achievement}" for achievement in achievements[:5]]) if achievements else None
     
     def get_gaming_achievements(self, hours, total_sessions, longest_session_minutes, is_admin=False):
         """Get gaming-specific achievements"""

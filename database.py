@@ -118,6 +118,20 @@ class RoxyDatabase:
                 )
             """)
 
+            # Voice sessions - time spent in voice channels (AFK channels excluded)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS voice_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    guild_id INTEGER,
+                    channel_name TEXT,
+                    start_time TEXT,
+                    end_time TEXT,
+                    duration INTEGER,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """)
+
             # Roxy's achievements system
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS achievements (
@@ -718,6 +732,7 @@ class RoxyDatabase:
                 game_cursor = await db.execute("DELETE FROM game_sessions WHERE end_time IS NULL")
                 listen_cursor = await db.execute("DELETE FROM listening_sessions WHERE end_time IS NULL")
                 await db.execute("DELETE FROM app_sessions WHERE end_time IS NULL")
+                await db.execute("DELETE FROM voice_sessions WHERE end_time IS NULL")
                 await db.execute("UPDATE users SET current_game = NULL, current_song = NULL, current_artist = NULL")
                 await db.commit()
                 return game_cursor.rowcount, listen_cursor.rowcount
@@ -760,6 +775,56 @@ class RoxyDatabase:
         except Exception as e:
             print(f"❌ Error in end_app_session: {e}")
             return 0
+
+    # ==================== VOICE SESSIONS ====================
+
+    async def start_voice_session(self, user_id: int, guild_id: int, channel_name: str):
+        """Start tracking time in a voice channel"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("DELETE FROM voice_sessions WHERE user_id = ? AND end_time IS NULL", (user_id,))
+                await db.execute("INSERT INTO voice_sessions (user_id, guild_id, channel_name, start_time) VALUES (?, ?, ?, ?)",
+                                 (user_id, guild_id, channel_name, datetime.now().isoformat()))
+                await db.commit()
+        except Exception as e:
+            print(f"❌ Error in start_voice_session: {e}")
+
+    async def end_voice_session(self, user_id: int) -> int:
+        """End the open voice session (capped at 24 hours)"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT id, start_time FROM voice_sessions
+                    WHERE user_id = ? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1
+                """, (user_id,)) as cursor:
+                    session = await cursor.fetchone()
+                if not session:
+                    return 0
+
+                end_dt = datetime.now()
+                duration = int((end_dt - datetime.fromisoformat(session[1])).total_seconds())
+                duration = min(max(duration, 1), MAX_SESSION_SECONDS)
+                await db.execute("UPDATE voice_sessions SET end_time = ?, duration = ? WHERE id = ?",
+                                 (end_dt.isoformat(), duration, session[0]))
+                await db.commit()
+                return duration
+        except Exception as e:
+            print(f"❌ Error in end_voice_session: {e}")
+            return 0
+
+    async def get_voice_stats(self, user_id: int) -> Dict:
+        """Total voice time, number of calls and longest call"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT COALESCE(SUM(duration), 0), COUNT(*), COALESCE(MAX(duration), 0) FROM voice_sessions
+                    WHERE user_id = ? AND duration IS NOT NULL
+                """, (user_id,)) as cursor:
+                    total_seconds, sessions, longest = await cursor.fetchone()
+            return {'total_seconds': total_seconds, 'sessions': sessions, 'longest_seconds': longest}
+        except Exception as e:
+            print(f"❌ Error in get_voice_stats: {e}")
+            return {'total_seconds': 0, 'sessions': 0, 'longest_seconds': 0}
 
     async def get_app_stats(self, user_id: int) -> Dict:
         """Total app time, favorite apps and recent app sessions for rr apps"""
@@ -1115,6 +1180,7 @@ class RoxyDatabase:
                 
                 # Delete all app sessions for this user
                 await db.execute("DELETE FROM app_sessions WHERE user_id = ?", (user_id,))
+                await db.execute("DELETE FROM voice_sessions WHERE user_id = ?", (user_id,))
                 
                 # Delete achievements
                 await db.execute("""
@@ -1362,7 +1428,7 @@ class RoxyDatabase:
         """Every table's column names and rows, for the admin Excel export"""
         tables = {}
         async with aiosqlite.connect(self.db_path) as db:
-            for table in ['users', 'game_sessions', 'listening_sessions', 'app_sessions', 'achievements', 'daily_stats']:
+            for table in ['users', 'game_sessions', 'listening_sessions', 'app_sessions', 'voice_sessions', 'achievements', 'daily_stats']:
                 async with db.execute(f"SELECT * FROM {table}") as cursor:
                     columns = [description[0] for description in cursor.description]
                     tables[table] = (columns, await cursor.fetchall())
@@ -1371,7 +1437,7 @@ class RoxyDatabase:
     
     # ==================== PRIVACY ====================
     
-    USER_DATA_TABLES = ['game_sessions', 'listening_sessions', 'app_sessions', 'achievements', 'daily_stats', 'users']
+    USER_DATA_TABLES = ['game_sessions', 'listening_sessions', 'app_sessions', 'voice_sessions', 'achievements', 'daily_stats', 'users']
     
     async def delete_user_data(self, user_id: int) -> Dict[str, int]:
         """Permanently delete everything stored about a user. Returns rows deleted per table."""

@@ -840,15 +840,29 @@ class RoxyAdmin(commands.Cog):
     @commands.command(name='reload')
     @is_admin()
     async def reload_cogs(self, ctx):
-        """Reload Roxy's cogs without restarting (Admin only)"""
+        """Reload Roxy's helper modules and cogs without restarting (Admin only)"""
+        import importlib
+        import sys
         results = []
+
+        # Shared helper modules first, so the reloaded cogs import the new versions
+        for module_name in ['config', 'database', 'info_embeds', 'patreon']:
+            try:
+                importlib.reload(sys.modules[module_name])
+                results.append(f"✅ `{module_name}.py`")
+            except Exception as e:
+                results.append(f"❌ `{module_name}.py`: {e}")
+        # The bot's own database object must come from the reloaded module too
+        self.bot.db = sys.modules['database'].RoxyDatabase()
+
         for extension in ['cogs.stats', 'cogs.admin']:
             try:
                 await self.bot.reload_extension(extension)
                 results.append(f"✅ `{extension}`")
             except Exception as e:
                 results.append(f"❌ `{extension}`: {e}")
-        await ctx.send("🔄 Reload results:\n" + "\n".join(results))
+        await ctx.send("🔄 Reload results:\n" + "\n".join(results) +
+                       "\n\nℹ️ Changes to `roxy.py` itself still need `rr shutdown` + restart.")
 
     @commands.command(name='shutdown')
     @is_admin()

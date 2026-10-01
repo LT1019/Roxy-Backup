@@ -1178,6 +1178,70 @@ class RoxyAdmin(commands.Cog):
             await ctx.send(f"❌ Error generating global statistics: {e}")
             print(f"❌ Error in totalstats: {e}")
 
+    @commands.command(name='serverlist', aliases=['servers'])
+    @is_admin()
+    async def server_list(self, ctx):
+        """Every server Roxy is in, biggest first, 10 per page (Owner only)"""
+        PER_PAGE = 10
+        guilds = sorted(self.bot.guilds, key=lambda g: g.member_count or 0, reverse=True)
+        total_members = sum(g.member_count or 0 for g in guilds)
+        state = {'page': 1, 'pages': max(1, (len(guilds) + PER_PAGE - 1) // PER_PAGE)}
+
+        def create_embed():
+            start = (state['page'] - 1) * PER_PAGE
+            lines = []
+            for rank, guild in enumerate(guilds[start:start + PER_PAGE], start + 1):
+                joined = f"<t:{int(guild.me.joined_at.timestamp())}:R>" if guild.me and guild.me.joined_at else "unknown"
+                owner = guild.owner.name if guild.owner else f"ID {guild.owner_id}"
+                lines.append(f"**{rank}. {guild.name}**\n`{guild.id}` • 👥 {guild.member_count:,} members • 👑 {owner} • joined {joined}")
+            embed = discord.Embed(
+                title="🌍 Roxy's Servers",
+                description=f"**{len(guilds)}** servers • **{total_members:,}** members in total\n\n" + ("\n\n".join(lines) or "Roxy isn't in any servers."),
+                color=discord.Color.gold()
+            )
+            embed.set_footer(text=f"Page {state['page']}/{state['pages']} • Use rr serverstats <id> for details on a server")
+            return embed
+
+        class ServerListView(OwnerOnlyView):
+            def __init__(self):
+                super().__init__(ctx.author.id, timeout=300)
+                self.message = None
+                self.previous_page.disabled = state['page'] <= 1
+                self.next_page.disabled = state['page'] >= state['pages']
+                if state['pages'] <= 1:
+                    self.remove_item(self.previous_page)
+                    self.remove_item(self.next_page)
+
+            async def refresh(self, interaction):
+                new_view = ServerListView()
+                new_view.message = interaction.message
+                self.stop()
+                await interaction.response.edit_message(embed=create_embed(), view=new_view)
+
+            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary)
+            async def previous_page(self, interaction, button):
+                state['page'] -= 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary)
+            async def next_page(self, interaction, button):
+                state['page'] += 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger)
+            async def close_menu(self, interaction, button):
+                self.stop()
+                await interaction.response.edit_message(view=None)
+
+            async def on_timeout(self):
+                try:
+                    await self.message.edit(view=None)
+                except (AttributeError, discord.HTTPException):
+                    pass
+
+        view = ServerListView()
+        view.message = await ctx.send(embed=create_embed(), view=view)
+
     @commands.command(name='serverstats')
     @is_admin()
     async def server_statistics(self, ctx, server_id: int = None):

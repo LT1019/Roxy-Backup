@@ -594,7 +594,7 @@ async def help_command(ctx, *, command=None):
         )
         owner_detailed.add_field(
             name="🗄️ Database Management",
-            value="`/dbstats` - Database statistics & Excel export (only you)\n`rr cleanup` - Clean inactive users\n`rr backup` - Create database backup\n`rr totalstats` - Global statistics\n`rr serverstats [server id]` - Any server's info & members",
+            value="`/dbstats` - Database statistics & Excel export (only you)\n`rr cleanup` - Clean inactive users\n`rr backup` - Create database backup\n`rr totalstats` - Global statistics\n`rr serverlist` - Every server Roxy is in\n`rr serverstats [server id]` - Any server's info & members",
             inline=False
         )
         owner_detailed.add_field(
@@ -612,7 +612,7 @@ async def help_command(ctx, *, command=None):
         owner_compact = discord.Embed(title="👑 Owner Commands", description="Compact view - switch to **Detailed** for explanations.", color=discord.Color.gold())
         owner_compact.add_field(name="👥 Users", value="`rr addxp` `rr setlevel` `rr resetuser` `rr deleteuser` `rr viewuser` `rr forceupdate`", inline=False)
         owner_compact.add_field(name="🏆 Achievements", value="`rr ach` `rr ach users` `rr giveach` `rr removeach`", inline=False)
-        owner_compact.add_field(name="🗄️ Data & Stats", value="`/dbstats` `/logs` `rr totalstats` `rr serverstats <id>` `rr cleanup` `rr backup`", inline=False)
+        owner_compact.add_field(name="🗄️ Data & Stats", value="`/dbstats` `/logs` `rr totalstats` `rr serverlist` `rr serverstats <id>` `rr cleanup` `rr backup`", inline=False)
         owner_compact.add_field(name="🤖 Bot Control", value="`rr setstatus` `rr announce` `rr reload` `rr shutdown` `rr clearsessions` `rr presence` `rr testxp`", inline=False)
         owner_compact.set_footer(text="👑 You are Roxy's Owner")
         pages['owner'] = ('Owner', '👑', 'Owner-only commands', owner_detailed, owner_compact)

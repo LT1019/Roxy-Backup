@@ -1390,8 +1390,11 @@ class RoxyStats(commands.Cog):
         """Discord profile for anyone - Server and Global views for members, Global for everyone else"""
         await ctx.defer()  # Slash commands must answer within 3 seconds - this buys time
         target = member or ctx.author
-        # Works for anyone on Discord, Roxy user or not - the Server view needs them to be in this server
+        # Works for anyone in this server, Roxy user or not - people outside the server are owner-only
         member = ctx.guild.get_member(target.id)
+        if member is None and not is_admin_id(ctx.author.id):
+            await ctx.send("❌ You can only look up members of this server.")
+            return
         try:
             # Raw API data: banner and accent color, plus nameplate/name style/tag that discord.py 2.5 doesn't parse
             raw = await self.bot.http.get_user(target.id)

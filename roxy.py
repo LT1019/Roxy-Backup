@@ -10,7 +10,7 @@ import psutil
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
-from config import ADMIN_USER_ID, LINK_BUTTONS, IGNORED_ACTIVITIES, is_admin, is_admin_id
+from config import ADMIN_USER_ID, LINK_BUTTONS, APP_ACTIVITIES, is_admin, is_admin_id
 from patreon import xp_multiplier, get_patrons, get_patron_tier
 
 # Load Roxy's configuration
@@ -42,6 +42,7 @@ class RoxyBot(commands.Bot):
         self.db = RoxyDatabase()
         self.active_sessions = {}  # Gaming sessions
         self.active_listening = {}  # Music listening sessions
+        self.active_apps = {}  # Non-game app sessions (VS Code, YouTube, ...)
         self.start_time: float = 0.0  # Add start_time attribute with type hint
         self.custom_status = None  # Set by rr setstatus - pauses the rotating status
 
@@ -98,7 +99,7 @@ async def on_ready():
                 await sync_member_activity(member)
             except Exception as e:
                 print(f"❌ Error syncing activity for {member}: {e}")
-    print(f"🔄 Synced activity: {len(roxy.active_sessions)} gaming, {len(roxy.active_listening)} listening")
+    print(f"🔄 Synced activity: {len(roxy.active_sessions)} gaming, {len(roxy.active_listening)} listening, {len(roxy.active_apps)} apps")
 
     # Start Roxy's background tasks (already running after a reconnect)
     if not update_roxy_status.is_running():
@@ -155,19 +156,24 @@ async def on_message(message):
     await roxy.process_commands(message)
 
 def get_current_activity(member):
-    """Read a member's current game and Spotify track from their presence"""
+    """Read a member's current game, non-game app and Spotify track from their presence"""
     game = None
+    app = None
     track = None
     for activity in member.activities:
-        if activity.type == discord.ActivityType.playing and game is None and activity.name.lower() not in IGNORED_ACTIVITIES:
-            game = activity.name
+        if activity.type == discord.ActivityType.playing:
+            # Non-game apps (VS Code, YouTube, ...) are tracked separately from gaming
+            if activity.name.lower() in APP_ACTIVITIES:
+                app = app or activity.name
+            else:
+                game = game or activity.name
         elif activity.type == discord.ActivityType.listening and track is None:
             # Spotify listening activity
             title = getattr(activity, 'title', None)
             artist = getattr(activity, 'artist', None)
             if title and artist:
                 track = {'song': title, 'artist': artist, 'album': getattr(activity, 'album', None)}
-    return game, track
+    return game, track, app
 
 async def sync_member_activity(member):
     """Bring Roxy's tracked sessions in line with a member's current presence.
@@ -177,7 +183,7 @@ async def sync_member_activity(member):
     In-memory state is updated before any await so concurrent duplicate events see it.
     """
     user_id = member.id
-    game, track = get_current_activity(member)
+    game, track, app = get_current_activity(member)
 
     # ==================== GAMING ====================
     tracked_game = roxy.active_sessions.get(user_id)
@@ -192,6 +198,20 @@ async def sync_member_activity(member):
         if game:
             await roxy.db.add_user(member.id, str(member), member.display_name)
             await roxy.db.start_game_session(user_id, game)
+
+    # ==================== APPS (non-game) ====================
+    tracked_app = roxy.active_apps.get(user_id)
+    if app != tracked_app:
+        if tracked_app:
+            del roxy.active_apps[user_id]
+        if app:
+            roxy.active_apps[user_id] = app
+
+        if tracked_app:
+            await roxy.db.end_app_session(user_id)
+        if app:
+            await roxy.db.add_user(member.id, str(member), member.display_name)
+            await roxy.db.start_app_session(user_id, app)
 
     # ==================== MUSIC LISTENING ====================
     tracked_track = roxy.active_listening.get(user_id)
@@ -456,7 +476,7 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="📊 Profile Commands",
-        value="`rr profile / p [@user]` or `/profile` - View profile\n`rr level [@user]` - Check level & XP\n`rr games [@user]` - Gaming analytics & achievements\n`rr music [@user]` - Music listening analytics",
+        value="`rr profile / p [@user]` or `/profile` - View profile\n`rr level [@user]` - Check level & XP\n`rr games [@user]` - Gaming analytics & achievements\n`rr music [@user]` - Music listening analytics\n`rr apps [@user]` - Time in apps (VS Code, YouTube...)",
         inline=False
     )
     

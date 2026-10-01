@@ -4,9 +4,9 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple, Dict
 
-# Longest single session that gets credited. Longer ones come from stuck or crashed sessions
+# Longest single session that gets credited (24 hours). Longer ones come from stuck or crashed sessions
 # (a game left open for days, or a session that was never closed) and would inflate stats.
-MAX_SESSION_SECONDS = 12 * 3600
+MAX_SESSION_SECONDS = 24 * 3600
 
 
 def format_duration(seconds) -> str:
@@ -105,6 +105,19 @@ class RoxyDatabase:
                 )
             """)
             
+            # App sessions - non-game apps that show as "Playing" (VS Code, YouTube, ...), kept apart from gaming
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS app_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    app_name TEXT,
+                    start_time TEXT,
+                    end_time TEXT,
+                    duration INTEGER,
+                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                )
+            """)
+
             # Roxy's achievements system
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS achievements (
@@ -267,7 +280,7 @@ class RoxyDatabase:
                         # Ensure minimum duration of 1 second
                         if duration < 1:
                             duration = 1
-                        # Never credit more than 12 hours for one session (stuck/crashed sessions)
+                        # Never credit more than 24 hours for one session (stuck/crashed sessions)
                         duration = min(duration, MAX_SESSION_SECONDS)
                         
                         # Update session with end time and duration
@@ -380,7 +393,7 @@ class RoxyDatabase:
                         # Ensure minimum duration of 1 second
                         if duration < 1:
                             duration = 1
-                        # Never credit more than 12 hours for one session (stuck/crashed sessions)
+                        # Never credit more than 24 hours for one session (stuck/crashed sessions)
                         duration = min(duration, MAX_SESSION_SECONDS)
                         
                         # Update session with end time and duration
@@ -704,12 +717,75 @@ class RoxyDatabase:
             async with aiosqlite.connect(self.db_path) as db:
                 game_cursor = await db.execute("DELETE FROM game_sessions WHERE end_time IS NULL")
                 listen_cursor = await db.execute("DELETE FROM listening_sessions WHERE end_time IS NULL")
+                await db.execute("DELETE FROM app_sessions WHERE end_time IS NULL")
                 await db.execute("UPDATE users SET current_game = NULL, current_song = NULL, current_artist = NULL")
                 await db.commit()
                 return game_cursor.rowcount, listen_cursor.rowcount
         except Exception as e:
             print(f"❌ Error in discard_unfinished_sessions: {e}")
             return 0, 0
+
+    # ==================== APP SESSIONS (non-game apps) ====================
+
+    async def start_app_session(self, user_id: int, app_name: str):
+        """Start tracking time in a non-game app (VS Code, YouTube, ...)"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                await db.execute("DELETE FROM app_sessions WHERE user_id = ? AND end_time IS NULL", (user_id,))
+                await db.execute("INSERT INTO app_sessions (user_id, app_name, start_time) VALUES (?, ?, ?)",
+                                 (user_id, app_name, datetime.now().isoformat()))
+                await db.commit()
+        except Exception as e:
+            print(f"❌ Error in start_app_session: {e}")
+
+    async def end_app_session(self, user_id: int) -> int:
+        """End the open app session. App time is shown in rr apps and earns no XP."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT id, start_time FROM app_sessions
+                    WHERE user_id = ? AND end_time IS NULL ORDER BY start_time DESC LIMIT 1
+                """, (user_id,)) as cursor:
+                    session = await cursor.fetchone()
+                if not session:
+                    return 0
+
+                end_dt = datetime.now()
+                duration = int((end_dt - datetime.fromisoformat(session[1])).total_seconds())
+                duration = min(max(duration, 1), MAX_SESSION_SECONDS)
+                await db.execute("UPDATE app_sessions SET end_time = ?, duration = ? WHERE id = ?",
+                                 (end_dt.isoformat(), duration, session[0]))
+                await db.commit()
+                return duration
+        except Exception as e:
+            print(f"❌ Error in end_app_session: {e}")
+            return 0
+
+    async def get_app_stats(self, user_id: int) -> Dict:
+        """Total app time, favorite apps and recent app sessions for rr apps"""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute("""
+                    SELECT COALESCE(SUM(duration), 0), COUNT(*) FROM app_sessions
+                    WHERE user_id = ? AND duration IS NOT NULL
+                """, (user_id,)) as cursor:
+                    total_seconds, sessions = await cursor.fetchone()
+                async with db.execute("""
+                    SELECT app_name, SUM(duration) AS total, COUNT(*) FROM app_sessions
+                    WHERE user_id = ? AND duration IS NOT NULL
+                    GROUP BY app_name ORDER BY total DESC LIMIT 10
+                """, (user_id,)) as cursor:
+                    favorites = await cursor.fetchall()
+                async with db.execute("""
+                    SELECT app_name, end_time, duration FROM app_sessions
+                    WHERE user_id = ? AND end_time IS NOT NULL AND duration >= 60
+                    ORDER BY end_time DESC LIMIT 5
+                """, (user_id,)) as cursor:
+                    recent = [(name, datetime.fromisoformat(end), duration) for name, end, duration in await cursor.fetchall()]
+            return {'total_seconds': total_seconds, 'sessions': sessions, 'favorites': favorites, 'recent': recent}
+        except Exception as e:
+            print(f"❌ Error in get_app_stats: {e}")
+            return {'total_seconds': 0, 'sessions': 0, 'favorites': [], 'recent': []}
 
     # ==================== LEADERBOARD METHODS ====================
     
@@ -1037,6 +1113,9 @@ class RoxyDatabase:
                     DELETE FROM listening_sessions WHERE user_id = ?
                 """, (user_id,))
                 
+                # Delete all app sessions for this user
+                await db.execute("DELETE FROM app_sessions WHERE user_id = ?", (user_id,))
+                
                 # Delete achievements
                 await db.execute("""
                     DELETE FROM achievements WHERE user_id = ?
@@ -1283,7 +1362,7 @@ class RoxyDatabase:
         """Every table's column names and rows, for the admin Excel export"""
         tables = {}
         async with aiosqlite.connect(self.db_path) as db:
-            for table in ['users', 'game_sessions', 'listening_sessions', 'achievements', 'daily_stats']:
+            for table in ['users', 'game_sessions', 'listening_sessions', 'app_sessions', 'achievements', 'daily_stats']:
                 async with db.execute(f"SELECT * FROM {table}") as cursor:
                     columns = [description[0] for description in cursor.description]
                     tables[table] = (columns, await cursor.fetchall())
@@ -1292,7 +1371,7 @@ class RoxyDatabase:
     
     # ==================== PRIVACY ====================
     
-    USER_DATA_TABLES = ['game_sessions', 'listening_sessions', 'achievements', 'daily_stats', 'users']
+    USER_DATA_TABLES = ['game_sessions', 'listening_sessions', 'app_sessions', 'achievements', 'daily_stats', 'users']
     
     async def delete_user_data(self, user_id: int) -> Dict[str, int]:
         """Permanently delete everything stored about a user. Returns rows deleted per table."""

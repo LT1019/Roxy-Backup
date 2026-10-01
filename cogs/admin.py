@@ -630,7 +630,7 @@ class RoxyAdmin(commands.Cog):
 
         tracked_game = self.bot.active_sessions.get(member.id)
         tracked_song = self.bot.active_listening.get(member.id)
-        lines.append(f"\n**Roxy is tracking:** game = {tracked_game or 'nothing'}, music = {tracked_song['song'] + ' by ' + tracked_song['artist'] if tracked_song else 'nothing'}")
+        lines.append(f"\n**Roxy is tracking:** game = {tracked_game or 'nothing'}, music = {tracked_song['song'] + ' by ' + tracked_song['artist'] if tracked_song else 'nothing'}, app = {self.bot.active_apps.get(member.id) or 'nothing'}")
 
         embed = discord.Embed(title=f"📡 What Roxy sees: {member.display_name}", description="\n".join(lines)[:4096], color=discord.Color.blurple())
         embed.set_footer(text="Empty activities while you're playing = Discord privacy settings are hiding them")
@@ -858,6 +858,11 @@ class RoxyAdmin(commands.Cog):
             await self.db.end_game_session(user_id, xp_multiplier(self.bot, user_id))
         for user_id in listens:
             await self.db.end_listening_session(user_id, xp_multiplier(self.bot, user_id))
+
+        apps = list(self.bot.active_apps)
+        self.bot.active_apps.clear()
+        for user_id in apps:
+            await self.db.end_app_session(user_id)
         return len(games), len(listens)
 
     # Advanced Admin Commands

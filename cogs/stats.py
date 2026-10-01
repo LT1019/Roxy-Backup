@@ -1410,6 +1410,39 @@ class RoxyStats(commands.Cog):
         view = ProfileInfoView('server')
         view.message = await ctx.send(embed=create_embed('server'), view=view)
 
+    @commands.command(name='apps', aliases=['app'])
+    async def user_apps(self, ctx, member: discord.Member = None):
+        """Time spent in non-game apps (VS Code, YouTube, Netflix, ...) - kept separate from gaming"""
+        member = member or ctx.author
+        stats = await self.db.get_app_stats(member.id)
+
+        embed = discord.Embed(title=f"💻 {member.display_name}'s Apps", color=discord.Color.teal())
+        embed.set_thumbnail(url=member.display_avatar.url)
+
+        current_app = self.bot.active_apps.get(member.id)
+        embed.add_field(
+            name="📊 **App Stats**",
+            value=f"🕐 **Total time:** {format_duration(stats['total_seconds'])}\n🔁 **Sessions:** {stats['sessions']:,}"
+                  + (f"\n🟢 **Using now:** {current_app}" if current_app else ""),
+            inline=False
+        )
+
+        if stats['favorites']:
+            favorites = "\n".join(f"**{i}.** {name} - {format_duration(total)} ({count} sessions)"
+                                  for i, (name, total, count) in enumerate(stats['favorites'], 1))
+            embed.add_field(name="⭐ **Most Used Apps**", value=self.fit_field(favorites), inline=False)
+
+        if stats['recent']:
+            recent = "\n".join(f"• **{name}** - {format_duration(duration)} (<t:{int(ended.timestamp())}:R>)"
+                               for name, ended, duration in stats['recent'])
+            embed.add_field(name="📈 **Latest Sessions**", value=self.fit_field(recent), inline=False)
+
+        if not stats['sessions'] and not current_app:
+            embed.description = "No app time yet. Apps like VS Code, YouTube and Netflix show up here when Discord shows them as your activity."
+
+        embed.set_footer(text="💜 App time is tracked separately - it doesn't count as gaming or earn XP")
+        await ctx.send(embed=embed)
+
     def fit_field(self, text, limit=1024):
         """Fit a list field into Discord's limit by shortening names (bold titles, italic artists,
         albums) just enough - every entry stays visible. Hiding entries is only a last resort."""

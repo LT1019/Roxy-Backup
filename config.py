@@ -17,9 +17,9 @@ LINK_BUTTONS = [
     ) if url.startswith('https://')
 ]
 
-# Apps that show up as "Playing" in Discord but aren't games - never counted as gaming time.
-# Add more without code changes: IGNORED_ACTIVITIES=App One,App Two in .env
-IGNORED_ACTIVITIES = {name.strip().lower() for name in [
+# Apps that show up as "Playing" in Discord but aren't games - tracked separately as app time (rr apps),
+# never as gaming. Add more without code changes: APP_ACTIVITIES=App One,App Two in .env
+APP_ACTIVITIES = {name.strip().lower() for name in [
     # Coding and creative tools
     'Visual Studio Code', 'Visual Studio', 'Cursor', 'PyCharm', 'IntelliJ IDEA', 'Android Studio', 'GitHub',
     'GitHub Desktop', 'Blender', 'Adobe Photoshop', 'Photoshop', 'CLIP STUDIO PAINT', 'OBS Studio', 'Serato DJ Pro',
@@ -30,7 +30,7 @@ IGNORED_ACTIVITIES = {name.strip().lower() for name in [
     # Launchers and tools
     'Steam', 'Epic Games Launcher', 'Battle.net', 'CurseForge', 'Medal', 'Valorant Tracker App', 'Auto Clicker',
     'Wallpaper Engine', 'Discord',
-] + os.getenv('IGNORED_ACTIVITIES', '').split(',') if name.strip()}
+] + os.getenv('APP_ACTIVITIES', '').split(',') if name.strip()}
 
 
 def is_admin_id(user_id: int) -> bool:

@@ -1534,35 +1534,56 @@ class RoxyStats(commands.Cog):
             'apps': {'label': 'Apps', 'emoji': '💻'},
             'listening': {'label': 'Listening', 'emoji': '🎵'},
         }
-        state['category'] = 'all'
+        PER_PAGE = 25
+        state.update(category='all', page=1, pages=1)
+
+        def session_lists():
+            """Current sessions per category: key -> (title, lines, text when empty)"""
+            gaming = [f"• **{name_of(uid)}** playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
+            voice = []
+            for uid, call_guild_id in bot.active_voice.items():
+                if state['global']:
+                    call_guild = bot.get_guild(call_guild_id)
+                    voice.append(f"• **{name_of(uid)}** in **{call_guild.name if call_guild else 'a server'}**")
+                elif call_guild_id == guild.id:
+                    voice.append(f"• **{name_of(uid)}** in a call")
+            apps = [f"• **{name_of(uid)}** using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
+            listening = [f"• **{name_of(uid)}** listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
+                         for uid, info in bot.active_listening.items() if in_scope(uid)]
+            return {
+                'gaming': ("🎮 Gaming", gaming, "No one is gaming right now"),
+                'voice': ("🎙️ Voice", voice, "No one is in a voice call right now"),
+                'apps': ("💻 Apps", apps, "No one is using an app right now"),
+                'listening': ("🎵 Listening", listening, "No one is listening to music right now"),
+            }
 
         def create_embed():
             scope = "🌍 All servers" if state['global'] else f"🏠 {guild.name}"
-            embed = discord.Embed(title="📡 Active Sessions", description=f"Happening right now • {scope}", color=discord.Color.blue())
-            show = lambda key: state['category'] in ('all', key)
+            lists = session_lists()
 
-            if show('gaming'):
-                gaming = [f"• **{name_of(uid)}** playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
-                embed.add_field(name=f"🎮 Gaming ({len(gaming)})", value=section(gaming, "No one is gaming right now"), inline=False)
+            if state['category'] == 'all':
+                # Overview: every category, shortened to fit
+                state['pages'] = 1
+                embed = discord.Embed(title="📡 Active Sessions", description=f"Happening right now • {scope}", color=discord.Color.blue())
+                for title, lines, empty in lists.values():
+                    embed.add_field(name=f"{title} ({len(lines)})", value=section(lines, empty), inline=False)
+                embed.set_footer(text="Pick a category in the dropdown to see everyone, 25 per page")
+                return embed
 
-            if show('voice'):
-                voice = []
-                for uid, call_guild_id in bot.active_voice.items():
-                    if state['global']:
-                        call_guild = bot.get_guild(call_guild_id)
-                        voice.append(f"• **{name_of(uid)}** in **{call_guild.name if call_guild else 'a server'}**")
-                    elif call_guild_id == guild.id:
-                        voice.append(f"• **{name_of(uid)}** in a call")
-                embed.add_field(name=f"🎙️ Voice ({len(voice)})", value=section(voice, "No one is in a voice call right now"), inline=False)
-
-            if show('apps'):
-                apps = [f"• **{name_of(uid)}** using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
-                embed.add_field(name=f"💻 Apps ({len(apps)})", value=section(apps, "No one is using an app right now"), inline=False)
-
-            if show('listening'):
-                listening = [f"• **{name_of(uid)}** listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
-                             for uid, info in bot.active_listening.items() if in_scope(uid)]
-                embed.add_field(name=f"🎵 Listening ({len(listening)})", value=section(listening, "No one is listening to music right now"), inline=False)
+            # One category: 25 people per page
+            title, lines, empty = lists[state['category']]
+            state['pages'] = max(1, (len(lines) + PER_PAGE - 1) // PER_PAGE)
+            state['page'] = min(max(state['page'], 1), state['pages'])
+            start = (state['page'] - 1) * PER_PAGE
+            page_lines = lines[start:start + PER_PAGE]
+            body = "\n".join(page_lines) if page_lines else empty
+            embed = discord.Embed(
+                title=f"{title} ({len(lines)})",
+                description=f"Happening right now • {scope}\n\n{body}"[:4096],
+                color=discord.Color.blue()
+            )
+            if lines:
+                embed.set_footer(text=f"Page {state['page']}/{state['pages']} • Showing {start + 1}-{start + len(page_lines)} of {len(lines)}")
             return embed
 
         is_owner = is_admin_id(ctx.author.id)
@@ -1575,6 +1596,7 @@ class RoxyStats(commands.Cog):
 
             async def callback(self, interaction):
                 state['category'] = self.values[0]
+                state['page'] = 1
                 await self.view.refresh(interaction)
 
         class SessionsView(discord.ui.View):
@@ -1582,6 +1604,15 @@ class RoxyStats(commands.Cog):
                 super().__init__(timeout=300)
                 self.message = None
                 self.add_item(SessionsSelect())
+
+                # Page buttons only for a single category with more than one page
+                if state['category'] != 'all' and state['pages'] > 1:
+                    self.previous_page.disabled = state['page'] <= 1
+                    self.next_page.disabled = state['page'] >= state['pages']
+                else:
+                    self.remove_item(self.previous_page)
+                    self.remove_item(self.next_page)
+
                 # Only the owner gets the Global button - everyone else sees just their own server
                 if is_owner:
                     self.toggle_scope.label = "🏠 Server" if state['global'] else "🌍 Global"
@@ -1589,10 +1620,11 @@ class RoxyStats(commands.Cog):
                     self.remove_item(self.toggle_scope)
 
             async def refresh(self, interaction):
+                embed = create_embed()  # Recalculates the page count before the buttons are built
                 new_view = SessionsView()
                 new_view.message = interaction.message
                 self.stop()
-                await interaction.response.edit_message(embed=create_embed(), view=new_view)
+                await interaction.response.edit_message(embed=embed, view=new_view)
 
             async def interaction_check(self, interaction):
                 if interaction.user.id != ctx.author.id:
@@ -1600,9 +1632,20 @@ class RoxyStats(commands.Cog):
                     return False
                 return True
 
+            @discord.ui.button(label='◀️ Previous', style=discord.ButtonStyle.secondary, row=1)
+            async def previous_page(self, interaction, button):
+                state['page'] -= 1
+                await self.refresh(interaction)
+
+            @discord.ui.button(label='▶️ Next', style=discord.ButtonStyle.secondary, row=1)
+            async def next_page(self, interaction, button):
+                state['page'] += 1
+                await self.refresh(interaction)
+
             @discord.ui.button(label='🌍 Global', style=discord.ButtonStyle.primary, row=1)
             async def toggle_scope(self, interaction, button):
                 state['global'] = not state['global']
+                state['page'] = 1
                 await self.refresh(interaction)
 
             async def on_timeout(self):
@@ -1611,8 +1654,9 @@ class RoxyStats(commands.Cog):
                 except (AttributeError, discord.HTTPException):
                     pass
 
+        embed = create_embed()
         view = SessionsView()
-        view.message = await ctx.send(embed=create_embed(), view=view)
+        view.message = await ctx.send(embed=embed, view=view)
 
     @commands.command(name='apps', aliases=['app'])
     async def user_apps(self, ctx, member: discord.Member = None):

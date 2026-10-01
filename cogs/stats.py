@@ -1,7 +1,8 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from database import RoxyDatabase, format_duration
+from database import (RoxyDatabase, format_duration, MESSAGE_XP, VOICE_XP_PER_MINUTE, GAMING_XP_PER_MINUTE,
+                      APP_XP_PER_MINUTE, LISTENING_XP_PER_2_MINUTES)
 from config import is_admin_id
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
 from patreon import get_patron_tier
@@ -384,22 +385,40 @@ class RoxyStats(commands.Cog):
             
             embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
             
+            level_size = next_level_xp - current_level_xp
             embed.add_field(
                 name="📊 **Current Progress**",
-                value=f"**Level:** {level}\n**Progress:** {progress_percentage}%\n**Total XP:** {xp:,} / {next_level_xp:,}",
+                value=f"**Level:** {level}\n"
+                      f"**Progress:** {progress_xp:,} / {level_size:,} XP ({progress_percentage}%)\n"
+                      f"**Total XP:** {xp:,} (since Level 1)\n"
+                      f"**Next level at:** {next_level_xp:,} XP ({next_level_xp - xp:,} to go)",
                 inline=False
             )
-            
-            # Show XP sources breakdown
-            message_xp = total_messages * 5
-            gaming_xp = total_playtime // 60
-            listening_xp = total_listening_time // 120
-            
-            embed.add_field(
-                name="✨ **XP Sources**",
-                value=f"💬 **Messages:** {message_xp:,} XP ({total_messages:,} messages)\n🎮 **Gaming:** {gaming_xp:,} XP ({total_playtime//3600}h {(total_playtime%3600)//60}m)\n🎵 **Listening:** {listening_xp:,} XP ({total_listening_time//3600}h {(total_listening_time%3600)//60}m)",
-                inline=False
+
+            # Show XP sources breakdown (same rates as live tracking, before Patreon boosts)
+            app_seconds = (await self.db.get_app_stats(member.id))['total_seconds']
+            voice_seconds = (await self.db.get_voice_stats(member.id))['total_seconds']
+            message_xp = total_messages * MESSAGE_XP
+            voice_xp = (voice_seconds // 60) * VOICE_XP_PER_MINUTE
+            gaming_xp = (total_playtime // 60) * GAMING_XP_PER_MINUTE
+            app_xp = (app_seconds // 60) * APP_XP_PER_MINUTE
+            listening_xp = (total_listening_time // 120) * LISTENING_XP_PER_2_MINUTES
+
+            def hm(seconds):
+                return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+
+            sources = (
+                f"💬 **Messages:** {message_xp:,} XP ({total_messages:,} messages)\n"
+                f"🎙️ **Voice:** {voice_xp:,} XP ({hm(voice_seconds)})\n"
+                f"🎮 **Gaming:** {gaming_xp:,} XP ({hm(total_playtime)})\n"
+                f"💻 **Apps:** {app_xp:,} XP ({hm(app_seconds)})\n"
+                f"🎵 **Listening:** {listening_xp:,} XP ({hm(total_listening_time)})"
             )
+            bonus_xp = xp - (message_xp + voice_xp + gaming_xp + app_xp + listening_xp)
+            if bonus_xp > 0:
+                sources += f"\n✨ **Other:** {bonus_xp:,} XP (boosts & small bonuses)"
+
+            embed.add_field(name="✨ **XP Sources**", value=sources, inline=False)
             
             # Show XP requirements for next few levels
             next_levels = []
@@ -420,7 +439,7 @@ class RoxyStats(commands.Cog):
             if is_admin:
                 embed.set_footer(text="👑 Keep being an awesome administrator! • Use dropdown to switch views")
             else:
-                embed.set_footer(text="💜 Keep chatting, gaming, and listening to level up! • Use dropdown to switch views")
+                embed.set_footer(text="💜 Chat, join voice, game and listen to level up! • Use dropdown to switch views")
             
             return embed
         

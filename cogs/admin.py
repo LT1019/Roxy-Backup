@@ -614,6 +614,28 @@ class RoxyAdmin(commands.Cog):
         self.bot.active_listening.pop(member.id, None)
         await ctx.send(f"🔄 Reset all stats for {member.display_name}.")
 
+    @commands.command(name='presence')
+    @is_admin()
+    @commands.guild_only()
+    async def show_presence(self, ctx, member: discord.Member = None):
+        """Show exactly what Discord tells Roxy about a member's status and activities (Admin only)"""
+        member = member or ctx.author
+        lines = [f"**Status:** {member.status} (desktop: {member.desktop_status}, mobile: {member.mobile_status}, web: {member.web_status})"]
+        if member.activities:
+            for activity in member.activities:
+                kind = getattr(activity.type, 'name', str(activity.type))
+                lines.append(f"• `{type(activity).__name__}` type=**{kind}** name=**{activity.name}**")
+        else:
+            lines.append("• **No activities** - Discord isn't sharing any activity for this member with Roxy")
+
+        tracked_game = self.bot.active_sessions.get(member.id)
+        tracked_song = self.bot.active_listening.get(member.id)
+        lines.append(f"\n**Roxy is tracking:** game = {tracked_game or 'nothing'}, music = {tracked_song['song'] + ' by ' + tracked_song['artist'] if tracked_song else 'nothing'}")
+
+        embed = discord.Embed(title=f"📡 What Roxy sees: {member.display_name}", description="\n".join(lines)[:4096], color=discord.Color.blurple())
+        embed.set_footer(text="Empty activities while you're playing = Discord privacy settings are hiding them")
+        await ctx.send(embed=embed)
+
     @commands.command(name='deleteuser')
     @is_admin()
     async def delete_user(self, ctx, user: discord.User):

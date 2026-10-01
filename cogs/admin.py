@@ -1281,17 +1281,23 @@ class RoxyAdmin(commands.Cog):
             """Channels grouped by category; 🔒 = members can't see it"""
             def icon(channel):
                 if isinstance(channel, discord.StageChannel):
-                    return '🎙️'
+                    return '🎙️ '
                 if isinstance(channel, discord.VoiceChannel):
-                    return '🔊'
+                    return '🔊 '
                 if isinstance(channel, discord.ForumChannel):
-                    return '💬'
+                    return '💬 '
                 if getattr(channel, 'is_news', lambda: False)():
-                    return '📢'
+                    return '📢 '
                 return '#'
 
             def is_hidden(channel):
                 return not channel.permissions_for(guild.default_role).view_channel
+
+            def required_roles(channel):
+                """Roles a hidden channel is opened up for (permission overwrites allowing View Channel), highest first"""
+                roles = [target for target, overwrite in channel.overwrites.items()
+                         if isinstance(target, discord.Role) and not target.is_default() and overwrite.view_channel]
+                return sorted(roles, key=lambda role: role.position, reverse=True)
 
             kinds = (discord.VoiceChannel, discord.StageChannel) if voice else (discord.TextChannel, discord.ForumChannel)
             lines, total, hidden = [], 0, 0
@@ -1302,12 +1308,17 @@ class RoxyAdmin(commands.Cog):
                 lines.append(f"**📁 {discord.utils.escape_markdown(category.name)}**" if category else "**📁 No category**")
                 for channel in channels:
                     total += 1
-                    lock = ""
+                    # • channel name  🔒  roles that can see it - the bullet first keeps "#" from becoming a heading
+                    line = f"• {icon(channel)}{discord.utils.escape_markdown(channel.name)}"
                     if is_hidden(channel):
                         hidden += 1
-                        lock = "🔒 "
-                    extra = f" • {len(channel.members)} in call" if voice and channel.members else ""
-                    lines.append(f"{lock}{icon(channel)} {discord.utils.escape_markdown(channel.name)}{extra}")
+                        line += " 🔒"
+                        allowed = [role.mention for role in required_roles(channel)]
+                        if allowed:
+                            line += " " + ", ".join(allowed[:3]) + (f" +{len(allowed) - 3} more" if len(allowed) > 3 else "")
+                    if voice and channel.members:
+                        line += f" • {len(channel.members)} in call"
+                    lines.append(line)
 
             state['pages'] = max(1, (len(lines) + CHANNELS_PER_PAGE - 1) // CHANNELS_PER_PAGE)
             state['page'] = min(max(state['page'], 1), state['pages'])

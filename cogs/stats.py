@@ -392,8 +392,8 @@ class RoxyStats(commands.Cog):
             embed.add_field(
                 name="📊 **Current Progress**",
                 value=f"**Level:** {level}\n"
-                      f"**Progress:** {progress_xp:,} / {level_size:,} XP ({progress_percentage}%)\n"
-                      f"**Total XP:** {xp:,}",
+                      f"**Progress:** {progress_xp}/{level_size} ({progress_percentage}%)\n"
+                      f"**Total XP:** {xp:,}/{next_level_xp:,}",
                 inline=False
             )
 

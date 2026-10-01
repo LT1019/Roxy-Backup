@@ -568,12 +568,11 @@ async def help_command(ctx, *, command=None):
         description="For members with **Administrator** permission and the server owner. These only affect **this server**.",
         color=discord.Color.blue()
     )
-    admin_detailed.add_field(name="📊 Server", value="`rr serverstats` - Overview, member list and Roxy stats for this server", inline=False)
     admin_detailed.add_field(name="📢 Announcements", value="`rr announce [#channel] <message>` - Post an announcement in this server", inline=False)
     admin_detailed.add_field(name="👋 Welcome Message", value="`rr welcome` - See and change the welcome message for new members (text, title, channel, on/off, preview)", inline=False)
     admin_detailed.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
 
-    admin_compact = discord.Embed(title="🛡️ Server Admin Commands", description="`rr serverstats` `rr announce` `rr welcome`", color=discord.Color.blue())
+    admin_compact = discord.Embed(title="🛡️ Server Admin Commands", description="`rr announce` `rr welcome`", color=discord.Color.blue())
     admin_compact.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
 
     pages = {

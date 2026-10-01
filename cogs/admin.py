@@ -1179,13 +1179,9 @@ class RoxyAdmin(commands.Cog):
             print(f"❌ Error in totalstats: {e}")
 
     @commands.command(name='serverstats')
-    @is_owner_or_server_admin()
+    @is_admin()
     async def server_statistics(self, ctx, server_id: int = None):
-        """Full information and member list for a server (Owner: any server by ID, server Admins: their own server)"""
-        if server_id is not None and not is_admin_id(ctx.author.id):
-            await ctx.send("❌ Server IDs are owner-only - `rr serverstats` shows the server you're in.")
-            return
-
+        """Full information and member list for a server Roxy is in (Owner only)"""
         if server_id is None:
             if ctx.guild is None:
                 await ctx.send("❌ Use this in a server, or give a server ID: `rr serverstats <server id>`")

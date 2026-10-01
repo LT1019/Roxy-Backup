@@ -1419,8 +1419,49 @@ class RoxyStats(commands.Cog):
         }
         if member is not None:
             views = {'server': {'label': 'Server', 'emoji': '🏠', 'description': f'Profile in {ctx.guild.name}'[:100]}, **views}
+        # Every server Roxy shares with them - only the owner sees this view
+        if is_admin_id(ctx.author.id):
+            views['servers'] = {'label': 'Servers', 'emoji': '🗂️', 'description': 'Servers they share with Roxy, their roles and position'}
+
+        def position_in(guild_member):
+            """Server Owner / Admin / Moderator / User, from their permissions in that server"""
+            perms = guild_member.guild_permissions
+            if guild_member.id == guild_member.guild.owner_id:
+                return "👑 Server Owner"
+            if perms.administrator:
+                return "🛡️ Admin"
+            if perms.manage_guild or perms.ban_members or perms.kick_members or perms.moderate_members or perms.manage_messages or perms.manage_roles:
+                return "🔨 Moderator"
+            return "👤 User"
+
+        def create_servers_embed():
+            memberships = [(g, g.get_member(target.id)) for g in self.bot.guilds]
+            memberships = sorted(((g, m) for g, m in memberships if m), key=lambda gm: gm[1].joined_at or discord.utils.utcnow())
+            blocks = []
+            for guild, guild_member in memberships:
+                # Role names, not mentions - mentions only display for roles of the server the message is in
+                roles = [discord.utils.escape_markdown(r.name) for r in reversed(guild_member.roles) if not r.is_default()]
+                role_text = ", ".join(roles[:6]) + (f" +{len(roles) - 6} more" if len(roles) > 6 else "") if roles else "No roles"
+                joined = f"<t:{int(guild_member.joined_at.timestamp())}:R>" if guild_member.joined_at else "unknown"
+                blocks.append(f"**{discord.utils.escape_markdown(guild.name)}** • {position_in(guild_member)} • joined {joined}\n🎭 {role_text}")
+            text = ""
+            for i, block in enumerate(blocks):
+                if len(text) + len(block) + 60 > 4000:
+                    text += f"*… and {len(blocks) - i} more servers*"
+                    break
+                text += block + "\n\n"
+            name = discord.utils.escape_markdown(target.display_name)
+            return discord.Embed(
+                title=f"🗂️ {name}'s Servers",
+                description=f"In **{len(blocks)}** server{'' if len(blocks) == 1 else 's'} with Roxy, oldest join first\n\n{text or 'Not in any server Roxy is in.'}"[:4096],
+                color=discord.Color.gold()
+            )
 
         def create_embed(view_key):
+            if view_key == 'servers':
+                embed = create_servers_embed()
+                embed.set_footer(text="👑 Owner view • Positions come from their permissions in each server", icon_url=ctx.author.display_avatar.url)
+                return embed
             if (view_key == 'global' or member is None) and user:
                 embed = global_profile_embed(user, raw)
             else:

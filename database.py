@@ -143,6 +143,25 @@ class RoxyDatabase:
                 )
             """)
 
+            # Voice XP is earned per active minute (not alone, not muted) - counted on the session
+            async with db.execute("PRAGMA table_info(voice_sessions)") as cursor:
+                voice_columns = [row[1] for row in await cursor.fetchall()]
+            if 'xp_minutes' not in voice_columns:
+                await db.execute("ALTER TABLE voice_sessions ADD COLUMN xp_minutes INTEGER DEFAULT 0")
+                # Earlier sessions earned XP for every full minute - keep their history consistent
+                await db.execute("UPDATE voice_sessions SET xp_minutes = duration / 60 WHERE duration IS NOT NULL")
+
+            # Per-server settings (welcome message, ...), changed by server Admins
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS guild_settings (
+                    guild_id INTEGER PRIMARY KEY,
+                    welcome_enabled INTEGER DEFAULT 1,
+                    welcome_channel_id INTEGER,
+                    welcome_title TEXT,
+                    welcome_message TEXT
+                )
+            """)
+
             # Roxy's achievements system
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS achievements (
@@ -835,13 +854,61 @@ class RoxyDatabase:
                 duration = min(max(duration, 1), MAX_SESSION_SECONDS)
                 await db.execute("UPDATE voice_sessions SET end_time = ?, duration = ? WHERE id = ?",
                                  (end_dt.isoformat(), duration, session[0]))
-                # Full minutes only, so hopping in and out of a call gives nothing
-                await self.award_xp(db, user_id, round((duration // 60) * VOICE_XP_PER_MINUTE * xp_multiplier))
+                # No XP here - voice XP is credited minute by minute while the call is active (award_voice_minute)
                 await db.commit()
                 return duration
         except Exception as e:
             print(f"❌ Error in end_voice_session: {e}")
             return 0
+
+    async def award_voice_minute(self, user_id: int, xp_multiplier: float = 1.0) -> bool:
+        """Credit one active voice minute (in a call with others, not muted or deafened).
+        Returns False if the user has no open voice session."""
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                cursor = await db.execute(
+                    "UPDATE voice_sessions SET xp_minutes = COALESCE(xp_minutes, 0) + 1 WHERE user_id = ? AND end_time IS NULL",
+                    (user_id,))
+                if cursor.rowcount == 0:
+                    return False
+                await self.award_xp(db, user_id, round(VOICE_XP_PER_MINUTE * xp_multiplier))
+                await db.commit()
+                return True
+        except Exception as e:
+            print(f"❌ Error in award_voice_minute: {e}")
+            return False
+
+    # ==================== SERVER SETTINGS ====================
+
+    GUILD_SETTINGS = ('welcome_enabled', 'welcome_channel_id', 'welcome_title', 'welcome_message')
+
+    async def get_guild_settings(self, guild_id: int) -> Dict:
+        """A server's settings - defaults (welcome on, default text) when nothing is saved"""
+        settings = {'welcome_enabled': 1, 'welcome_channel_id': None, 'welcome_title': None, 'welcome_message': None}
+        try:
+            async with aiosqlite.connect(self.db_path) as db:
+                async with db.execute(f"SELECT {', '.join(self.GUILD_SETTINGS)} FROM guild_settings WHERE guild_id = ?", (guild_id,)) as cursor:
+                    row = await cursor.fetchone()
+            if row:
+                settings.update(zip(self.GUILD_SETTINGS, row))
+        except Exception as e:
+            print(f"❌ Error in get_guild_settings: {e}")
+        return settings
+
+    async def set_guild_setting(self, guild_id: int, key: str, value):
+        """Save one server setting (key must be one of GUILD_SETTINGS)"""
+        if key not in self.GUILD_SETTINGS:
+            raise ValueError(f"Unknown setting: {key}")
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("INSERT OR IGNORE INTO guild_settings (guild_id) VALUES (?)", (guild_id,))
+            await db.execute(f"UPDATE guild_settings SET {key} = ? WHERE guild_id = ?", (value, guild_id))
+            await db.commit()
+
+    async def reset_guild_welcome(self, guild_id: int):
+        """Back to the default welcome message"""
+        async with aiosqlite.connect(self.db_path) as db:
+            await db.execute("DELETE FROM guild_settings WHERE guild_id = ?", (guild_id,))
+            await db.commit()
 
     async def get_voice_stats(self, user_id: int) -> Dict:
         """Total voice time, number of calls and longest call"""
@@ -852,10 +919,13 @@ class RoxyDatabase:
                     WHERE user_id = ? AND duration IS NOT NULL
                 """, (user_id,)) as cursor:
                     total_seconds, sessions, longest = await cursor.fetchone()
-            return {'total_seconds': total_seconds, 'sessions': sessions, 'longest_seconds': longest}
+                # XP minutes include the call in progress, since they're credited live
+                async with db.execute("SELECT COALESCE(SUM(xp_minutes), 0) FROM voice_sessions WHERE user_id = ?", (user_id,)) as cursor:
+                    xp_minutes = (await cursor.fetchone())[0]
+            return {'total_seconds': total_seconds, 'sessions': sessions, 'longest_seconds': longest, 'xp_minutes': xp_minutes}
         except Exception as e:
             print(f"❌ Error in get_voice_stats: {e}")
-            return {'total_seconds': 0, 'sessions': 0, 'longest_seconds': 0}
+            return {'total_seconds': 0, 'sessions': 0, 'longest_seconds': 0, 'xp_minutes': 0}
 
     async def get_ongoing_seconds(self, user_id: int) -> Dict[str, int]:
         """Seconds so far in sessions that haven't ended yet - lets profiles count a call or game live"""

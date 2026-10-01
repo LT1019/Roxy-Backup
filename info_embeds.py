@@ -206,3 +206,29 @@ def profile_embed(member: discord.Member, user: discord.User = None) -> discord.
         embed.add_field(name="🏅 **Badges**", value="\n".join(badges), inline=False)
 
     return embed
+
+
+DEFAULT_WELCOME_TITLE = "🎉 Welcome to the server!"
+DEFAULT_WELCOME_MESSAGE = "Hey {user}! I'm **Roxy**, your friendly stats bot. Use `rr help` to see what I can do!"
+WELCOME_PLACEHOLDERS = "`{user}` mention · `{name}` name · `{server}` server name · `{members}` member count"
+
+
+def fill_welcome_placeholders(text: str, member: discord.Member) -> str:
+    """Replace {user} {name} {server} {members} - plain replace, so other braces in the text are left alone"""
+    return (text.replace('{user}', member.mention)
+                .replace('{name}', member.display_name)
+                .replace('{server}', member.guild.name)
+                .replace('{members}', f"{member.guild.member_count:,}"))
+
+
+def welcome_embed(member: discord.Member, settings: dict) -> discord.Embed:
+    """The welcome message for a new member, using the server's custom text if set.
+    The tracking notice stays in the footer - server Admins can't remove it."""
+    embed = discord.Embed(
+        title=fill_welcome_placeholders(settings.get('welcome_title') or DEFAULT_WELCOME_TITLE, member)[:256],
+        description=fill_welcome_placeholders(settings.get('welcome_message') or DEFAULT_WELCOME_MESSAGE, member)[:4096],
+        color=discord.Color.purple()
+    )
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.set_footer(text="🔒 Roxy tracks message counts, games, apps, voice and Spotify activity for stats - see the Privacy Policy")
+    return embed

@@ -9,6 +9,7 @@ import psutil
 from datetime import datetime, timedelta, timezone
 from database import RoxyDatabase
 from config import is_admin, is_admin_id, is_owner_or_server_admin
+import info_embeds
 from info_embeds import server_overview_embed
 from patreon import xp_multiplier
 
@@ -762,6 +763,93 @@ class RoxyAdmin(commands.Cog):
         self.bot.custom_status = message[:128]
         await self.bot.change_presence(activity=discord.Game(name=self.bot.custom_status))
         await ctx.send(f"✅ Status set to **{self.bot.custom_status}** (use `rr setstatus clear` to resume rotation)")
+
+    # ==================== WELCOME MESSAGE (server Admins) ====================
+
+    @commands.group(name='welcome', invoke_without_command=True)
+    @commands.guild_only()
+    @is_owner_or_server_admin()
+    async def welcome(self, ctx):
+        """Show this server's welcome message settings"""
+        settings = await self.db.get_guild_settings(ctx.guild.id)
+        channel = ctx.guild.get_channel(settings['welcome_channel_id'] or 0)
+        embed = discord.Embed(title="👋 Welcome Message Settings", color=discord.Color.purple())
+        embed.add_field(name="Status", value="✅ On" if settings['welcome_enabled'] else "❌ Off", inline=True)
+        embed.add_field(name="Channel", value=channel.mention if channel else f"System channel ({ctx.guild.system_channel.mention if ctx.guild.system_channel else 'none set'})", inline=True)
+        embed.add_field(name="Title", value=settings['welcome_title'] or f"*Default:* {info_embeds.DEFAULT_WELCOME_TITLE}", inline=False)
+        embed.add_field(name="Message", value=(settings['welcome_message'] or f"*Default:* {info_embeds.DEFAULT_WELCOME_MESSAGE}")[:1024], inline=False)
+        embed.add_field(
+            name="✏️ Change it",
+            value="`rr welcome message <text>` - The message\n`rr welcome title <text>` - The heading\n"
+                  "`rr welcome channel #channel` - Where it's posted\n`rr welcome on` / `rr welcome off`\n"
+                  "`rr welcome test` - Preview it\n`rr welcome reset` - Back to default",
+            inline=False
+        )
+        embed.add_field(name="🔤 Placeholders", value=info_embeds.WELCOME_PLACEHOLDERS, inline=False)
+        embed.set_footer(text="The privacy notice in the footer always stays - Roxy's Terms require members to be told about tracking")
+        await ctx.send(embed=embed)
+
+    @welcome.command(name='message')
+    @is_owner_or_server_admin()
+    async def welcome_message(self, ctx, *, text: str):
+        """Set the welcome message text"""
+        if len(text) > 1500:
+            await ctx.send("❌ Keep the message under 1500 characters.")
+            return
+        await self.db.set_guild_setting(ctx.guild.id, 'welcome_message', text)
+        await ctx.send("✅ Welcome message saved. Preview:", embed=info_embeds.welcome_embed(ctx.author, await self.db.get_guild_settings(ctx.guild.id)))
+
+    @welcome.command(name='title')
+    @is_owner_or_server_admin()
+    async def welcome_title(self, ctx, *, text: str):
+        """Set the welcome message heading"""
+        if len(text) > 200:
+            await ctx.send("❌ Keep the title under 200 characters.")
+            return
+        await self.db.set_guild_setting(ctx.guild.id, 'welcome_title', text)
+        await ctx.send("✅ Welcome title saved. Preview:", embed=info_embeds.welcome_embed(ctx.author, await self.db.get_guild_settings(ctx.guild.id)))
+
+    @welcome.command(name='channel')
+    @is_owner_or_server_admin()
+    async def welcome_channel(self, ctx, channel: discord.TextChannel):
+        """Choose where the welcome message is posted"""
+        if channel.guild != ctx.guild:
+            await ctx.send("❌ Pick a channel in this server.")
+            return
+        if not channel.permissions_for(ctx.guild.me).send_messages:
+            await ctx.send(f"❌ I can't send messages in {channel.mention} - give me permission there first.")
+            return
+        await self.db.set_guild_setting(ctx.guild.id, 'welcome_channel_id', channel.id)
+        await ctx.send(f"✅ New members will be welcomed in {channel.mention}.")
+
+    @welcome.command(name='on')
+    @is_owner_or_server_admin()
+    async def welcome_on(self, ctx):
+        """Turn the welcome message on"""
+        await self.db.set_guild_setting(ctx.guild.id, 'welcome_enabled', 1)
+        await ctx.send("✅ Welcome messages are **on**.")
+
+    @welcome.command(name='off')
+    @is_owner_or_server_admin()
+    async def welcome_off(self, ctx):
+        """Turn the welcome message off"""
+        await self.db.set_guild_setting(ctx.guild.id, 'welcome_enabled', 0)
+        await ctx.send("✅ Welcome messages are **off**. Use `rr welcome on` to turn them back on.")
+
+    @welcome.command(name='test')
+    @is_owner_or_server_admin()
+    async def welcome_test(self, ctx):
+        """Preview the welcome message as if you just joined"""
+        settings = await self.db.get_guild_settings(ctx.guild.id)
+        note = "" if settings['welcome_enabled'] else " *(currently turned off)*"
+        await ctx.send(f"👀 Preview{note}:", embed=info_embeds.welcome_embed(ctx.author, settings))
+
+    @welcome.command(name='reset')
+    @is_owner_or_server_admin()
+    async def welcome_reset(self, ctx):
+        """Back to Roxy's default welcome message"""
+        await self.db.reset_guild_welcome(ctx.guild.id)
+        await ctx.send("✅ Welcome message reset to the default (on, system channel).")
 
     @commands.command(name='announce')
     @is_owner_or_server_admin()

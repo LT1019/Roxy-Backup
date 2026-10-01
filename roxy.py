@@ -116,6 +116,8 @@ async def on_ready():
         activity = discord.Game(name="Starting up... 🤖")
         await roxy.change_presence(status=discord.Status.online, activity=activity)
         update_roxy_status.start()
+    if not award_voice_xp.is_running():
+        award_voice_xp.start()
 
     print("✅ Roxy is fully operational!")
 
@@ -125,15 +127,18 @@ async def on_member_join(member):
     print(f"👋 New member joined: {member}")
     await roxy.db.add_user(member.id, str(member), member.display_name)
     
-    # Roxy's welcome message (optional)
-    if member.guild.system_channel:
-        embed = discord.Embed(
-            title="🎉 Welcome to the server!",
-            description=f"Hey {member.mention}! I'm **Roxy**, your friendly stats bot. Use `rr help` to see what I can do!\n\n🔒 I track message counts, games and Spotify activity for stats - see my Privacy Policy for details.",
-            color=discord.Color.purple()
-        )
-        embed.set_thumbnail(url=member.avatar.url if member.avatar else member.default_avatar.url)
-        await member.guild.system_channel.send(embed=embed)
+    # Roxy's welcome message - server Admins can change it with rr welcome
+    import info_embeds  # Looked up each time so rr reload picks up changes
+    settings = await roxy.db.get_guild_settings(member.guild.id)
+    if not settings['welcome_enabled']:
+        return
+    channel = member.guild.get_channel(settings['welcome_channel_id'] or 0) or member.guild.system_channel
+    if channel is None:
+        return
+    try:
+        await channel.send(embed=info_embeds.welcome_embed(member, settings))
+    except discord.HTTPException as e:
+        print(f"❌ Couldn't send welcome message in {member.guild}: {e}")
 
 @roxy.event
 async def on_message(message):
@@ -295,6 +300,32 @@ async def on_presence_update(before, after):
         print(f"❌ Error in on_presence_update: {e}")
         import traceback
         traceback.print_exc()
+
+def is_voice_active(voice_state) -> bool:
+    """Counts for voice XP: not muted or deafened (by themselves or a moderator), not a silent stage listener"""
+    return not (voice_state.self_mute or voice_state.mute or voice_state.self_deaf or voice_state.deaf or voice_state.suppress)
+
+@tasks.loop(minutes=1)
+async def award_voice_xp():
+    """Every minute: voice XP for people actually talking with someone.
+    No XP when alone, muted, deafened, or in the AFK channel - call time is still tracked."""
+    credited = set()
+    try:
+        for guild in roxy.guilds:
+            for channel in guild.voice_channels + guild.stage_channels:
+                if channel == guild.afk_channel:
+                    continue
+                humans = [m for m in channel.members if not m.bot]
+                if len(humans) < 2:
+                    continue  # Alone (or only with bots) - no XP
+                for member in humans:
+                    if member.id in credited or member.id not in roxy.active_voice or not member.voice:
+                        continue
+                    if is_voice_active(member.voice):
+                        credited.add(member.id)
+                        await roxy.db.award_voice_minute(member.id, xp_multiplier(roxy, member.id))
+    except Exception as e:
+        print(f"❌ Error awarding voice XP: {e}")
 
 @tasks.loop(minutes=3)
 async def update_roxy_status():
@@ -539,9 +570,10 @@ async def help_command(ctx, *, command=None):
     )
     admin_detailed.add_field(name="📊 Server", value="`rr serverstats` - Overview, member list and Roxy stats for this server", inline=False)
     admin_detailed.add_field(name="📢 Announcements", value="`rr announce [#channel] <message>` - Post an announcement in this server", inline=False)
+    admin_detailed.add_field(name="👋 Welcome Message", value="`rr welcome` - See and change the welcome message for new members (text, title, channel, on/off, preview)", inline=False)
     admin_detailed.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
 
-    admin_compact = discord.Embed(title="🛡️ Server Admin Commands", description="`rr serverstats` `rr announce`", color=discord.Color.blue())
+    admin_compact = discord.Embed(title="🛡️ Server Admin Commands", description="`rr serverstats` `rr announce` `rr welcome`", color=discord.Color.blue())
     admin_compact.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
 
     pages = {

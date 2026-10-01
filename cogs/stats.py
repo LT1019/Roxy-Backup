@@ -399,9 +399,10 @@ class RoxyStats(commands.Cog):
 
             # Show XP sources breakdown (same rates as live tracking, before Patreon boosts)
             app_seconds = (await self.db.get_app_stats(member.id))['total_seconds']
-            voice_seconds = (await self.db.get_voice_stats(member.id))['total_seconds']
+            voice_stats = await self.db.get_voice_stats(member.id)
+            voice_seconds = voice_stats['total_seconds']
             message_xp = total_messages * MESSAGE_XP
-            voice_xp = (voice_seconds // 60) * VOICE_XP_PER_MINUTE
+            voice_xp = voice_stats['xp_minutes'] * VOICE_XP_PER_MINUTE  # Only active minutes earn voice XP
             gaming_xp = (total_playtime // 60) * GAMING_XP_PER_MINUTE
             app_xp = (app_seconds // 60) * APP_XP_PER_MINUTE
             listening_xp = (total_listening_time // 120) * LISTENING_XP_PER_2_MINUTES

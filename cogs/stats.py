@@ -1511,9 +1511,13 @@ class RoxyStats(commands.Cog):
         def name_of(user_id):
             if not state['global']:
                 member = guild.get_member(user_id)
-                return member.display_name if member else None
+                return discord.utils.escape_markdown(member.display_name) if member else None
             user = bot.get_user(user_id)
-            return user.display_name if user else f"User {user_id}"
+            return discord.utils.escape_markdown(user.display_name) if user else f"User {user_id}"
+
+        def uid_tag(user_id):
+            """User ID after the name - only in the owner's Global view"""
+            return f" `{user_id}`" if state['global'] else ""
 
         def in_scope(user_id):
             return state['global'] or guild.get_member(user_id) is not None
@@ -1540,16 +1544,16 @@ class RoxyStats(commands.Cog):
 
         def session_lists():
             """Current sessions per category: key -> (title, lines, text when empty)"""
-            gaming = [f"• **{name_of(uid)}** playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
+            gaming = [f"• **{name_of(uid)}**{uid_tag(uid)} playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
             voice = []
             for uid, call_guild_id in bot.active_voice.items():
                 if state['global']:
                     call_guild = bot.get_guild(call_guild_id)
-                    voice.append(f"• **{name_of(uid)}** in **{call_guild.name if call_guild else 'a server'}**")
+                    voice.append(f"• **{name_of(uid)}**{uid_tag(uid)} in **{call_guild.name if call_guild else 'a server'}**")
                 elif call_guild_id == guild.id:
-                    voice.append(f"• **{name_of(uid)}** in a call")
-            apps = [f"• **{name_of(uid)}** using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
-            listening = [f"• **{name_of(uid)}** listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
+                    voice.append(f"• **{name_of(uid)}**{uid_tag(uid)} in a call")
+            apps = [f"• **{name_of(uid)}**{uid_tag(uid)} using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
+            listening = [f"• **{name_of(uid)}**{uid_tag(uid)} listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
                          for uid, info in bot.active_listening.items() if in_scope(uid)]
             return {
                 'gaming': ("🎮 Gaming", gaming, "No one is gaming right now"),

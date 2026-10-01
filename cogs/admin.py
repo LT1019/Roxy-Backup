@@ -1198,7 +1198,7 @@ class RoxyAdmin(commands.Cog):
                 lines.append(f"**{rank}. {name}** • `{guild.id}`\n👥 {guild.member_count:,} • 👑 {owner} • joined {joined}")
             embed = discord.Embed(
                 title="🌍 Roxy's Servers",
-                description=f"**{len(guilds)}** servers • **{total_members:,}** members in total\n\n" + ("\n".join(lines) or "Roxy isn't in any servers."),
+                description=f"**{len(guilds)}** servers • **{total_members:,}** members in total\n\n" + ("\n\n".join(lines) or "Roxy isn't in any servers."),
                 color=discord.Color.gold()
             )
             embed.set_footer(text=f"Page {state['page']}/{state['pages']} • Use rr serverstats <id> for details on a server")

@@ -616,17 +616,6 @@ class RoxyAdmin(commands.Cog):
         await ctx.send(f"🗑️ Deleted all data for {user} (`{user.id}`): {details or 'nothing was stored'}.\n"
                        "ℹ️ Roxy starts tracking them again from zero if they keep using Discord where she is.")
 
-    @commands.command(name='viewuser')
-    @is_admin()
-    async def view_user(self, ctx, user: discord.User):
-        """The same profile as rr profile, plus Owner Details (ID, username, first/last seen, sessions) - Owner only"""
-        stats_cog = self.bot.get_cog('RoxyStats')
-        if stats_cog is None:
-            await ctx.send("❌ The stats cog isn't loaded - try `rr reload`.")
-            return
-        member = ctx.guild.get_member(user.id) if ctx.guild else None
-        await stats_cog.send_profile_with_navigation(ctx, member or user, 'profile', owner_details=True)
-
     @commands.command(name='forceupdate')
     @is_admin()
     async def force_update(self, ctx, member: discord.Member):

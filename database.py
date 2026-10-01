@@ -1584,13 +1584,3 @@ class RoxyDatabase:
                 deleted[table] = cursor.rowcount
             await db.commit()
         return deleted
-
-    
-    async def get_user_data_summary(self, user_id: int) -> Dict[str, int]:
-        """How many rows each table holds about a user (for rr viewuser)"""
-        summary = {}
-        async with aiosqlite.connect(self.db_path) as db:
-            for table in self.USER_DATA_TABLES:
-                async with db.execute(f"SELECT COUNT(*) FROM {table} WHERE user_id = ?", (user_id,)) as cursor:
-                    summary[table] = (await cursor.fetchone())[0]
-        return summary

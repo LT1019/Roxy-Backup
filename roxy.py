@@ -584,7 +584,7 @@ async def help_command(ctx, *, command=None):
         owner_detailed = discord.Embed(title="👑 Roxy Owner Control Panel", description="**Owner-only commands** for managing Roxy Bot", color=discord.Color.gold())
         owner_detailed.add_field(
             name="👥 User Management",
-            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr deleteuser <@user or ID>` - Erase all their data (deletion requests)\n`rr viewuser <@user>` - View detailed user data\n`rr forceupdate <@user>` - Recalculate a user's totals",
+            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr deleteuser <@user or ID>` - Erase all their data (deletion requests)\n`rr forceupdate <@user>` - Recalculate a user's totals",
             inline=False
         )
         owner_detailed.add_field(
@@ -610,7 +610,7 @@ async def help_command(ctx, *, command=None):
         owner_detailed.set_footer(text="👑 You are Roxy's Owner | Owner commands are ignored for everyone else")
 
         owner_compact = discord.Embed(title="👑 Owner Commands", description="Compact view - switch to **Detailed** for explanations.", color=discord.Color.gold())
-        owner_compact.add_field(name="👥 Users", value="`rr addxp` `rr setlevel` `rr resetuser` `rr deleteuser` `rr viewuser` `rr forceupdate`", inline=False)
+        owner_compact.add_field(name="👥 Users", value="`rr addxp` `rr setlevel` `rr resetuser` `rr deleteuser` `rr forceupdate`", inline=False)
         owner_compact.add_field(name="🏆 Achievements", value="`rr ach` `rr ach users` `rr giveach` `rr removeach`", inline=False)
         owner_compact.add_field(name="🗄️ Data & Stats", value="`/dbstats` `/logs` `rr totalstats` `rr serverlist` `rr serverstats <id>` `rr cleanup` `rr backup`", inline=False)
         owner_compact.add_field(name="🤖 Bot Control", value="`rr setstatus` `rr announce` `rr reload` `rr shutdown` `rr clearsessions` `rr presence` `rr testxp`", inline=False)

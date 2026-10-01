@@ -10,7 +10,7 @@ import psutil
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
-from config import ADMIN_USER_ID, LINK_BUTTONS, APP_ACTIVITIES, is_admin, is_admin_id
+from config import ADMIN_USER_ID, LINK_BUTTONS, APP_ACTIVITIES, is_admin, is_admin_id, is_server_admin
 from patreon import xp_multiplier, get_patrons, get_patron_tier
 
 # Load Roxy's configuration
@@ -356,7 +356,7 @@ async def ping(ctx):
     
     # Show admin indicator if user is admin
     if is_admin_id(ctx.author.id):
-        embed.set_footer(text="👑 Administrator")
+        embed.set_footer(text="👑 Owner")
     
     await ctx.send(embed=embed)
 
@@ -518,18 +518,66 @@ async def help_command(ctx, *, command=None):
         inline=False
     )
     
-    # Show admin section only if user is admin
-    if is_admin_id(ctx.author.id):
-        embed.add_field(
-            name="👑 Admin Commands",
-            value="`rr admin` - Admin control panel\n*(Admin-only commands)*",
-            inline=False
+    embed.set_footer(text="💡 Prefix: rr (e.g. rr help)")
+    user_embed = embed
+
+    # Help pages by role: everyone gets User, server Admins also Admin, Roxy's owner also Owner
+    is_owner = is_admin_id(ctx.author.id)
+    is_admin_here = is_owner or (ctx.guild is not None and is_server_admin(ctx.author))
+    if not is_admin_here:
+        await ctx.send(embed=user_embed, view=link_buttons_view())
+        return
+
+    admin_embed = discord.Embed(
+        title="🛡️ Server Admin Commands",
+        description="For members with **Administrator** permission and the server owner. These only affect **this server**.",
+        color=discord.Color.blue()
+    )
+    admin_embed.add_field(name="📊 Server", value="`rr serverstats` - Overview, member list and Roxy stats for this server", inline=False)
+    admin_embed.add_field(name="📢 Announcements", value="`rr announce [#channel] <message>` - Post an announcement in this server", inline=False)
+    admin_embed.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
+
+    pages = {
+        'user': ('User', '💜', 'Commands for everyone', user_embed),
+        'admin': ('Admin', '🛡️', 'Server Admin commands', admin_embed),
+    }
+
+    if is_owner:
+        owner_embed = discord.Embed(
+            title="👑 Owner Commands",
+            description="Only Roxy's owner can use these. Full panel: `rr admin`",
+            color=discord.Color.gold()
         )
-        embed.set_footer(text="💡 Prefix: rr (e.g. rr help) | 👑 You are Administrator")
-    else:
-        embed.set_footer(text="💡 Prefix: rr (e.g. rr help)")
-    
-    await ctx.send(embed=embed, view=link_buttons_view())
+        owner_embed.add_field(name="👥 Users", value="`rr addxp` `rr setlevel` `rr resetuser` `rr deleteuser` `rr viewuser` `rr forceupdate`", inline=False)
+        owner_embed.add_field(name="🏆 Achievements", value="`rr ach` `rr giveach` `rr removeach`", inline=False)
+        owner_embed.add_field(name="🗄️ Data & Stats", value="`/dbstats` `/logs` `rr totalstats` `rr serverstats <id>` `rr cleanup` `rr backup`", inline=False)
+        owner_embed.add_field(name="🤖 Bot Control", value="`rr setstatus` `rr announce` (any server) `rr reload` `rr shutdown` `rr clearsessions` `rr presence` `rr testxp`", inline=False)
+        owner_embed.set_footer(text="👑 You are Roxy's Owner")
+        pages['owner'] = ('Owner', '👑', 'Owner-only commands', owner_embed)
+
+    class HelpSelect(discord.ui.Select):
+        def __init__(self, current):
+            options = [discord.SelectOption(label=label, emoji=emoji, description=desc, value=key, default=(key == current))
+                       for key, (label, emoji, desc, _) in pages.items()]
+            super().__init__(placeholder="📚 Choose a help page...", options=options, row=0)
+
+        async def callback(self, interaction):
+            await interaction.response.edit_message(embed=pages[self.values[0]][3], view=HelpView(self.values[0]))
+
+    class HelpView(discord.ui.View):
+        def __init__(self, current):
+            super().__init__(timeout=300)
+            self.add_item(HelpSelect(current))
+            for label, url in LINK_BUTTONS:
+                self.add_item(discord.ui.Button(label=label, url=url, row=1))
+
+        async def interaction_check(self, interaction):
+            if interaction.user.id != ctx.author.id:
+                await interaction.response.send_message("❌ This menu isn't yours - use `rr help` to get your own.", ephemeral=True)
+                return False
+            return True
+
+    await ctx.send(embed=user_embed, view=HelpView('user'))
 
 # Debug commands (Available to everyone)
 @roxy.command(name='debug')
@@ -594,7 +642,7 @@ async def debug_user(ctx, member: discord.Member = None):
 @roxy.command(name='testxp')
 @is_admin()
 async def test_xp(ctx):
-    """Test XP system (Admin only)"""
+    """Test XP system (Owner only)"""
     try:
         # Add user and update message count
         await roxy.db.add_user(ctx.author.id, str(ctx.author), ctx.author.display_name)
@@ -713,7 +761,7 @@ async def on_command_error(ctx, error):
     elif ctx.interaction is not None and isinstance(error, (commands.CheckFailure, app_commands.CheckFailure)):
         # A slash command must always get a reply, or Discord shows "The application did not respond"
         if not ctx.interaction.response.is_done():
-            await ctx.interaction.response.send_message("❌ This command is for Roxy's admin only.", ephemeral=True)
+            await ctx.interaction.response.send_message("❌ This command is only for Roxy's owner or server admins.", ephemeral=True)
     elif isinstance(error, commands.CheckFailure):
         # Completely ignore failed admin commands - no response
         pass

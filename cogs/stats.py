@@ -3,7 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from database import (RoxyDatabase, format_duration, MESSAGE_XP, VOICE_XP_PER_MINUTE, GAMING_XP_PER_MINUTE,
                       APP_XP_PER_MINUTE, LISTENING_XP_PER_2_MINUTES)
-from config import is_admin_id, LINK_BUTTONS
+from config import is_admin_id, is_server_admin, LINK_BUTTONS
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
 from patreon import get_patron_tier, get_patrons
 from datetime import datetime, timedelta
@@ -207,7 +207,7 @@ class RoxyStats(commands.Cog):
                     color=0xffd700  # Gold color for admin
                 )
                 embed.set_author(
-                    name="🔱 ROXY BOT ADMINISTRATOR 🔱",
+                    name="🔱 ROXY BOT OWNER 🔱",
                     icon_url=member.avatar.url if member.avatar else member.default_avatar.url
                 )
             else:
@@ -223,7 +223,7 @@ class RoxyStats(commands.Cog):
             level_emoji = self.get_level_emoji(level, is_admin)
             
             if is_admin:
-                level_title = f"👑 **Level {level}** (Administrator)"
+                level_title = f"👑 **Level {level}** (Owner)"
             else:
                 level_title = f"{level_emoji} **Level {level}**"
             
@@ -241,14 +241,14 @@ class RoxyStats(commands.Cog):
             voice_seconds = (await self.db.get_voice_stats(member.id))['total_seconds'] + ongoing['voice']
             total_tracked_seconds = live_playtime + app_seconds + (total_listening_time or 0)
             if is_admin:
-                rank_title = "🔱 Bot Administrator"
+                rank_title = "🔱 Bot Owner"
             else:
                 rank_title = self.get_rank_title(level)
 
             # Left column: talking and totals - right column: where the time went
             embed.add_field(
                 name="📊 **Activity**",
-                value=f"📝 **{total_messages:,}** Messages\n🎙️ **{voice_seconds // 3600}h {(voice_seconds % 3600) // 60}m** Voice\n⏱️ **{total_tracked_seconds // 3600}h {(total_tracked_seconds % 3600) // 60}m** Total\n🎯 **{rank_title}**",
+                value=f"📝 **{total_messages:,}** Messages\n🎙️ **{voice_seconds // 3600}h {(voice_seconds % 3600) // 60}m** Voice\n⏱️ **{total_tracked_seconds // 3600}h {(total_tracked_seconds % 3600) // 60}m** Total\n🎯 **{rank_title}**" + ("\n🛡️ **Server Admin**" if not is_admin and is_server_admin(member) else ""),
                 inline=True
             )
             embed.add_field(
@@ -340,7 +340,7 @@ class RoxyStats(commands.Cog):
             # === FOOTER ===
             if is_admin:
                 embed.set_footer(
-                    text=f"👑 Roxy Bot Administrator • Ultimate Authority",
+                    text=f"👑 Roxy Bot Owner • Ultimate Authority",
                     icon_url=self.bot.user.avatar.url if self.bot.user.avatar else None
                 )
             else:
@@ -377,7 +377,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Level (Administrator)",
+                    title=f"👑 {member.display_name}'s Level (Owner)",
                     color=0xffd700
                 )
             else:
@@ -439,7 +439,7 @@ class RoxyStats(commands.Cog):
                 )
             
             if is_admin:
-                embed.set_footer(text="👑 Keep being an awesome administrator! • Use dropdown to switch views")
+                embed.set_footer(text="👑 Keep being an awesome owner! • Use dropdown to switch views")
             else:
                 embed.set_footer(text="💜 Chat, join voice, game and listen to level up! • Use dropdown to switch views")
             
@@ -453,7 +453,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Music (Administrator)",
+                    title=f"👑 {member.display_name}'s Music (Owner)",
                     color=0xffd700
                 )
             else:
@@ -581,7 +581,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Gaming (Administrator)",
+                    title=f"👑 {member.display_name}'s Gaming (Owner)",
                     color=0xffd700
                 )
             else:
@@ -721,7 +721,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Complete Game List (Administrator)",
+                    title=f"👑 {member.display_name}'s Complete Game List (Owner)",
                     color=0xffd700
                 )
             else:
@@ -796,7 +796,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Gaming History (Administrator)",
+                    title=f"👑 {member.display_name}'s Gaming History (Owner)",
                     color=0xffd700
                 )
             else:
@@ -872,7 +872,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Complete Artist List (Administrator)",
+                    title=f"👑 {member.display_name}'s Complete Artist List (Owner)",
                     color=0xffd700
                 )
             else:
@@ -947,7 +947,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Complete Song List (Administrator)",
+                    title=f"👑 {member.display_name}'s Complete Song List (Owner)",
                     color=0xffd700
                 )
             else:
@@ -1022,7 +1022,7 @@ class RoxyStats(commands.Cog):
             
             if is_admin:
                 embed = discord.Embed(
-                    title=f"👑 {member.display_name}'s Listening History (Administrator)",
+                    title=f"👑 {member.display_name}'s Listening History (Owner)",
                     color=0xffd700
                 )
             else:
@@ -1484,8 +1484,8 @@ class RoxyStats(commands.Cog):
             embed.add_field(name="💜 Patreon Supporters", value="Be the first! Find the Patreon button under `rr help`.", inline=False)
 
         if is_admin_id(ctx.author.id):
-            embed.add_field(name="👑 Admin Commands", value="Use `rr admin` for admin controls", inline=False)
-            embed.set_footer(text="Made with ❤️ using discord.py | You are Roxy's Administrator")
+            embed.add_field(name="👑 Owner Commands", value="Use `rr admin` for the owner control panel", inline=False)
+            embed.set_footer(text="Made with ❤️ using discord.py | You are Roxy's Owner")
         else:
             embed.set_footer(text="Made with ❤️ using discord.py | Use rr help for commands")
 
@@ -1827,7 +1827,7 @@ class RoxyStats(commands.Cog):
 
         # Admin-specific achievements
         if is_admin:
-            achievements.append("👑 Roxy Bot Administrator")
+            achievements.append("👑 Roxy Bot Owner")
             return "\n".join([f"• {achievement}" for achievement in achievements + extra])
         
         # Level-based achievements
@@ -1873,7 +1873,7 @@ class RoxyStats(commands.Cog):
         
         # Admin gets special gaming achievements
         if is_admin:
-            achievements.append("👑 Gaming Administrator")
+            achievements.append("👑 Gaming Owner")
             if hours >= 10:
                 achievements.append("🔱 Elite Gaming Authority")
             return "\n".join([f"• {achievement}" for achievement in achievements])
@@ -1915,7 +1915,7 @@ class RoxyStats(commands.Cog):
         
         # Admin gets special music achievements
         if is_admin:
-            achievements.append("👑 Music Administrator")
+            achievements.append("👑 Music Owner")
             if hours >= 10:
                 achievements.append("🔱 Elite Music Authority")
             return "\n".join([f"• {achievement}" for achievement in achievements])

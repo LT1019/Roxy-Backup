@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Roxy's administrator - set ADMIN_USER_ID in .env to override
+# Roxy's owner - set ADMIN_USER_ID in .env to override
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '526795891487670302'))
 
 # Link buttons shown under rr help and rr info - leave a value unset in .env to hide its button
@@ -39,11 +39,29 @@ def is_admin_id(user_id: int) -> bool:
 
 
 def is_admin():
-    """Command check for Roxy's admin - silent for non-admins"""
+    """Command check for Roxy's owner - silent for everyone else"""
     async def predicate(ctx):
         if not is_admin_id(ctx.author.id):
-            # Log admin command attempts by non-admins (for security)
-            print(f"🚫 Non-admin {ctx.author} ({ctx.author.id}) tried to use admin command: {ctx.command}")
+            # Log owner command attempts by others (for security)
+            print(f"🚫 Non-owner {ctx.author} ({ctx.author.id}) tried to use owner command: {ctx.command}")
             return False
         return True
+    return commands.check(predicate)
+
+
+def is_server_admin(member) -> bool:
+    """True if this member is an Admin of their server: the server owner or anyone with Administrator permission"""
+    guild = getattr(member, 'guild', None)
+    if guild is None:
+        return False
+    return member.id == guild.owner_id or member.guild_permissions.administrator
+
+
+def is_owner_or_server_admin():
+    """Command check: Roxy's owner anywhere, or an Admin of the server the command is used in - silent for others"""
+    async def predicate(ctx):
+        if is_admin_id(ctx.author.id) or (ctx.guild and is_server_admin(ctx.author)):
+            return True
+        print(f"🚫 {ctx.author} ({ctx.author.id}) tried to use server-admin command: {ctx.command}")
+        return False
     return commands.check(predicate)

@@ -8,7 +8,7 @@ import time
 import psutil
 from datetime import datetime, timedelta, timezone
 from database import RoxyDatabase
-from config import is_admin, is_admin_id
+from config import is_admin, is_admin_id, is_owner_or_server_admin
 from info_embeds import server_overview_embed
 from patreon import xp_multiplier
 
@@ -205,7 +205,7 @@ class RoxyAdmin(commands.Cog):
         print(f"👑 Admin {ctx.author} accessed admin panel")
         
         embed = discord.Embed(
-            title="👑 Roxy Admin Control Panel",
+            title="👑 Roxy Owner Control Panel",
             description="**Admin-Only Commands** for managing Roxy Bot",
             color=discord.Color.red()
         )
@@ -242,11 +242,11 @@ class RoxyAdmin(commands.Cog):
         
         embed.add_field(
             name="⚡ Quick Access",
-            value="`rr admin` or `rr a` - This admin panel\n`rrhelp` - The space after rr is optional",
+            value="`rr admin` or `rr a` - This owner panel\n`rrhelp` - The space after rr is optional",
             inline=False
         )
         
-        embed.set_footer(text="👑 You are Roxy's Administrator | Admin commands are ignored for everyone else")
+        embed.set_footer(text="👑 You are Roxy's Owner | Owner commands are ignored for everyone else")
         
         await ctx.send(embed=embed)
 
@@ -260,7 +260,7 @@ class RoxyAdmin(commands.Cog):
             return
 
         embed = discord.Embed(
-            title="🏆 Admin Achievement Control Panel",
+            title="🏆 Owner Achievement Control Panel",
             description="**Manage user achievements and rewards**",
             color=discord.Color.gold()
         )
@@ -382,7 +382,7 @@ class RoxyAdmin(commands.Cog):
                 "emoji": "👑",
                 "color": 0xe74c3c,
                 "achievements": [
-                    "`Roxy Bot Administrator` - Bot admin status",
+                    "`Roxy Bot Owner` - Owner of Roxy Bot",
                     "`Early Adopter` - Used Roxy before 2027 (UTC) - automatic",
                     "`Event Participant` - Participated in special events",
                     "`Community Helper` - Helped other users significantly"
@@ -742,7 +742,7 @@ class RoxyAdmin(commands.Cog):
 
     # ==================== DATABASE MANAGEMENT ====================
 
-    @commands.hybrid_command(name='dbstats', description="Database statistics and Excel export (admin only, only you can see it)")
+    @commands.hybrid_command(name='dbstats', description="Database statistics and Excel export (owner only, only you can see it)")
     @app_commands.default_permissions(administrator=True)
     @is_admin()
     async def database_statistics(self, ctx):
@@ -816,10 +816,14 @@ class RoxyAdmin(commands.Cog):
         await ctx.send(f"✅ Status set to **{self.bot.custom_status}** (use `rr setstatus clear` to resume rotation)")
 
     @commands.command(name='announce')
-    @is_admin()
+    @is_owner_or_server_admin()
     async def announce(self, ctx, channel: discord.TextChannel = None, *, message: str):
-        """Send an announcement embed, optionally to another channel (Admin only)"""
+        """Send an announcement embed, optionally to another channel (Owner, or server Admins in their own server)"""
         target = channel or ctx.channel
+        # Server Admins can only post in their own server
+        if not is_admin_id(ctx.author.id) and getattr(target, 'guild', None) != ctx.guild:
+            await ctx.send("❌ You can only send announcements to channels in this server.")
+            return
         embed = discord.Embed(
             title="📢 Announcement",
             description=message,
@@ -1139,9 +1143,13 @@ class RoxyAdmin(commands.Cog):
             print(f"❌ Error in totalstats: {e}")
 
     @commands.command(name='serverstats')
-    @is_admin()
+    @is_owner_or_server_admin()
     async def server_statistics(self, ctx, server_id: int = None):
-        """Full information and member list for a server Roxy is in (Admin only)"""
+        """Full information and member list for a server (Owner: any server by ID, server Admins: their own server)"""
+        if server_id is not None and not is_admin_id(ctx.author.id):
+            await ctx.send("❌ Server IDs are owner-only - `rr serverstats` shows the server you're in.")
+            return
+
         if server_id is None:
             if ctx.guild is None:
                 await ctx.send("❌ Use this in a server, or give a server ID: `rr serverstats <server id>`")
@@ -1305,7 +1313,7 @@ class RoxyAdmin(commands.Cog):
         view = ServerView()
         view.message = await ctx.send(embed=embed, view=view)
 
-    @commands.hybrid_command(name='logs', description="Recent activity logs (admin only, only you can see it)")
+    @commands.hybrid_command(name='logs', description="Recent activity logs (owner only, only you can see it)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(limit="Entries per page (1-50, default 10)")
     @is_admin()

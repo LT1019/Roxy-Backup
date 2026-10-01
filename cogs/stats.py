@@ -1461,7 +1461,7 @@ class RoxyStats(commands.Cog):
         if not stats['sessions'] and not current_app:
             embed.description = "No app time yet. Apps like VS Code, YouTube and Netflix show up here when Discord shows them as your activity."
 
-        embed.set_footer(text="💜 App time is tracked separately - it doesn't count as gaming or earn XP")
+        embed.set_footer(text="💜 App time is tracked separately from gaming • earns 1 XP per minute")
         return embed
 
     def fit_field(self, text, limit=1024):

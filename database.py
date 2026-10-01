@@ -8,6 +8,17 @@ from typing import Optional, List, Tuple, Dict
 # (a game left open for days, or a session that was never closed) and would inflate stats.
 MAX_SESSION_SECONDS = 24 * 3600
 
+# XP rates (before Patreon boosts)
+MESSAGE_XP = 5                   # per minute of chatting - see MESSAGE_XP_COOLDOWN
+MESSAGE_XP_COOLDOWN = 60         # seconds - more messages within a minute count, but give no extra XP
+GAMING_XP_PER_MINUTE = 1
+APP_XP_PER_MINUTE = 1            # same as gaming
+VOICE_XP_PER_MINUTE = 25
+LISTENING_XP_PER_2_MINUTES = 1
+
+# When each user last got message XP (in memory - resets on restart, which is harmless)
+_last_message_xp = {}
+
 
 def format_duration(seconds) -> str:
     """Readable duration: '21h 17m' from an hour up, '5m 3s' below"""
@@ -189,9 +200,15 @@ class RoxyDatabase:
                 if current_stats:
                     current_messages, current_xp, current_level = current_stats
                     
-                    # Add message and XP (5 XP per message)
+                    # Every message counts, but XP is given at most once per minute (stops spam farming)
                     new_messages = current_messages + 1
-                    new_xp = current_xp + round(5 * xp_multiplier)  # Patreon Fan/VIP get boosted XP
+                    now = datetime.now()
+                    last = _last_message_xp.get(user_id)
+                    if last is None or (now - last).total_seconds() >= MESSAGE_XP_COOLDOWN:
+                        _last_message_xp[user_id] = now
+                        new_xp = current_xp + round(MESSAGE_XP * xp_multiplier)  # Patreon Fan/VIP get boosted XP
+                    else:
+                        new_xp = current_xp
                     
                     # Calculate new level using progressive system
                     new_level = self.calculate_level_from_xp(new_xp)
@@ -753,8 +770,19 @@ class RoxyDatabase:
         except Exception as e:
             print(f"❌ Error in start_app_session: {e}")
 
-    async def end_app_session(self, user_id: int) -> int:
-        """End the open app session. App time is shown in rr apps and earns no XP."""
+    async def award_xp(self, db, user_id: int, xp: int):
+        """Add XP inside an open connection and recalculate the level"""
+        if xp <= 0:
+            return
+        async with db.execute("SELECT xp FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            row = await cursor.fetchone()
+        if row:
+            new_xp = row[0] + xp
+            await db.execute("UPDATE users SET xp = ?, level = ? WHERE user_id = ?",
+                             (new_xp, self.calculate_level_from_xp(new_xp), user_id))
+
+    async def end_app_session(self, user_id: int, xp_multiplier: float = 1.0) -> int:
+        """End the open app session - earns XP like gaming (1 XP per minute)"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 async with db.execute("""
@@ -770,6 +798,7 @@ class RoxyDatabase:
                 duration = min(max(duration, 1), MAX_SESSION_SECONDS)
                 await db.execute("UPDATE app_sessions SET end_time = ?, duration = ? WHERE id = ?",
                                  (end_dt.isoformat(), duration, session[0]))
+                await self.award_xp(db, user_id, max(1, round((duration // 60) * APP_XP_PER_MINUTE * xp_multiplier)))
                 await db.commit()
                 return duration
         except Exception as e:
@@ -789,8 +818,8 @@ class RoxyDatabase:
         except Exception as e:
             print(f"❌ Error in start_voice_session: {e}")
 
-    async def end_voice_session(self, user_id: int) -> int:
-        """End the open voice session (capped at 24 hours)"""
+    async def end_voice_session(self, user_id: int, xp_multiplier: float = 1.0) -> int:
+        """End the open voice session (capped at 24 hours) - 25 XP per full minute"""
         try:
             async with aiosqlite.connect(self.db_path) as db:
                 async with db.execute("""
@@ -806,6 +835,8 @@ class RoxyDatabase:
                 duration = min(max(duration, 1), MAX_SESSION_SECONDS)
                 await db.execute("UPDATE voice_sessions SET end_time = ?, duration = ? WHERE id = ?",
                                  (end_dt.isoformat(), duration, session[0]))
+                # Full minutes only, so hopping in and out of a call gives nothing
+                await self.award_xp(db, user_id, round((duration // 60) * VOICE_XP_PER_MINUTE * xp_multiplier))
                 await db.commit()
                 return duration
         except Exception as e:

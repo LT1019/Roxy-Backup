@@ -416,7 +416,7 @@ class RoxyAdmin(commands.Cog):
             
             # Add category-specific tips
             tips = {
-                "Level Achievements": "💡 **Tip:** Gain XP by chatting (5 XP/message), gaming (1 XP/minute), and listening (1 XP/2 minutes). Levels are infinite!",
+                "Level Achievements": "💡 **Tip:** Gain XP from voice calls (25 XP/minute), chatting (5 XP/minute), gaming and apps (1 XP/minute) and listening (1 XP/2 minutes). Levels are infinite!",
                 "Gaming Achievements": "💡 **Tip:** Set your Discord status to 'Playing [Game]' to track sessions",
                 "Music Achievements": "💡 **Tip:** Listen to Spotify to track music sessions automatically",
                 "Social Achievements": "💡 **Tip:** Stay active in chat and participate in gaming sessions",
@@ -886,12 +886,12 @@ class RoxyAdmin(commands.Cog):
         apps = list(self.bot.active_apps)
         self.bot.active_apps.clear()
         for user_id in apps:
-            await self.db.end_app_session(user_id)
+            await self.db.end_app_session(user_id, xp_multiplier(self.bot, user_id))
 
         voice = list(self.bot.active_voice)
         self.bot.active_voice.clear()
         for user_id in voice:
-            await self.db.end_voice_session(user_id)
+            await self.db.end_voice_session(user_id, xp_multiplier(self.bot, user_id))
         return len(games), len(listens)
 
     # Advanced Admin Commands

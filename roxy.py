@@ -218,7 +218,7 @@ async def sync_member_activity(member):
             roxy.active_apps[user_id] = app
 
         if tracked_app:
-            await roxy.db.end_app_session(user_id)
+            await roxy.db.end_app_session(user_id, xp_multiplier(roxy, user_id))
         if app:
             await roxy.db.add_user(member.id, str(member), member.display_name)
             await roxy.db.start_app_session(user_id, app)
@@ -266,7 +266,7 @@ async def sync_member_voice(member, voice_state):
         roxy.active_voice[user_id] = current
 
     if tracked is not None:
-        await roxy.db.end_voice_session(user_id)
+        await roxy.db.end_voice_session(user_id, xp_multiplier(roxy, user_id))
     if current is not None:
         await roxy.db.add_user(member.id, str(member), member.display_name)
         await roxy.db.start_voice_session(user_id, member.guild.id, channel.name)

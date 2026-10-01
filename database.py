@@ -4,6 +4,19 @@ import asyncio
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple, Dict
 
+# Longest single session that gets credited. Longer ones come from stuck or crashed sessions
+# (a game left open for days, or a session that was never closed) and would inflate stats.
+MAX_SESSION_SECONDS = 12 * 3600
+
+
+def format_duration(seconds) -> str:
+    """Readable duration: '21h 17m' from an hour up, '5m 3s' below"""
+    seconds = int(seconds or 0)
+    if seconds >= 3600:
+        return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+    return f"{seconds // 60}m {seconds % 60}s"
+
+
 class RoxyDatabase:
     """Roxy Bot's database management system with progressive XP and music listening tracking"""
     
@@ -254,6 +267,8 @@ class RoxyDatabase:
                         # Ensure minimum duration of 1 second
                         if duration < 1:
                             duration = 1
+                        # Never credit more than 12 hours for one session (stuck/crashed sessions)
+                        duration = min(duration, MAX_SESSION_SECONDS)
                         
                         # Update session with end time and duration
                         await db.execute("""
@@ -365,6 +380,8 @@ class RoxyDatabase:
                         # Ensure minimum duration of 1 second
                         if duration < 1:
                             duration = 1
+                        # Never credit more than 12 hours for one session (stuck/crashed sessions)
+                        duration = min(duration, MAX_SESSION_SECONDS)
                         
                         # Update session with end time and duration
                         await db.execute("""
@@ -459,8 +476,8 @@ class RoxyDatabase:
                 
                 return {
                     'total_sessions': total_sessions,
-                    'avg_session': f"{avg_minutes}m {avg_seconds}s" if avg_duration else "No sessions",
-                    'longest_session': f"{longest_minutes}m {longest_seconds}s" if longest_duration else "No sessions",
+                    'avg_session': format_duration(avg_duration) if avg_duration else "No sessions",
+                    'longest_session': format_duration(longest_duration) if longest_duration else "No sessions",
                     'avg_duration_seconds': avg_duration,
                     'longest_session_minutes': longest_minutes
                 }
@@ -538,7 +555,7 @@ class RoxyDatabase:
                         end_time,
                         duration
                     FROM listening_sessions 
-                    WHERE user_id = ? AND end_time IS NOT NULL AND duration IS NOT NULL
+                    WHERE user_id = ? AND end_time IS NOT NULL AND duration >= 60
                     ORDER BY end_time DESC
                     LIMIT ?
                 """, (user_id, limit)) as cursor:
@@ -809,8 +826,8 @@ class RoxyDatabase:
                 
                 return {
                     'total_sessions': total_sessions,
-                    'avg_session': f"{avg_minutes}m {avg_seconds}s" if avg_duration else "No sessions",
-                    'longest_session': f"{longest_minutes}m {longest_seconds}s" if longest_duration else "No sessions",
+                    'avg_session': format_duration(avg_duration) if avg_duration else "No sessions",
+                    'longest_session': format_duration(longest_duration) if longest_duration else "No sessions",
                     'avg_duration_seconds': avg_duration,
                     'longest_session_minutes': longest_minutes
                 }
@@ -861,7 +878,7 @@ class RoxyDatabase:
                         end_time,
                         duration
                     FROM game_sessions 
-                    WHERE user_id = ? AND end_time IS NOT NULL AND duration IS NOT NULL
+                    WHERE user_id = ? AND end_time IS NOT NULL AND duration >= 60
                     ORDER BY end_time DESC
                     LIMIT ?
                 """, (user_id, limit)) as cursor:

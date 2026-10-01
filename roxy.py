@@ -10,7 +10,7 @@ import psutil
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from database import RoxyDatabase
-from config import ADMIN_USER_ID, LINK_BUTTONS, is_admin, is_admin_id
+from config import ADMIN_USER_ID, LINK_BUTTONS, IGNORED_ACTIVITIES, is_admin, is_admin_id
 from patreon import xp_multiplier, get_patrons, get_patron_tier
 
 # Load Roxy's configuration
@@ -159,7 +159,7 @@ def get_current_activity(member):
     game = None
     track = None
     for activity in member.activities:
-        if activity.type == discord.ActivityType.playing and game is None:
+        if activity.type == discord.ActivityType.playing and game is None and activity.name.lower() not in IGNORED_ACTIVITIES:
             game = activity.name
         elif activity.type == discord.ActivityType.listening and track is None:
             # Spotify listening activity

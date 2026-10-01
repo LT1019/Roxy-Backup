@@ -17,6 +17,21 @@ LINK_BUTTONS = [
     ) if url.startswith('https://')
 ]
 
+# Apps that show up as "Playing" in Discord but aren't games - never counted as gaming time.
+# Add more without code changes: IGNORED_ACTIVITIES=App One,App Two in .env
+IGNORED_ACTIVITIES = {name.strip().lower() for name in [
+    # Coding and creative tools
+    'Visual Studio Code', 'Visual Studio', 'Cursor', 'PyCharm', 'IntelliJ IDEA', 'Android Studio', 'GitHub',
+    'GitHub Desktop', 'Blender', 'Adobe Photoshop', 'Photoshop', 'CLIP STUDIO PAINT', 'OBS Studio', 'Serato DJ Pro',
+    # Browsers, websites and streaming
+    'Google Chrome', 'Google', 'Microsoft Edge', 'Firefox', 'Brave', 'Opera GX', 'YouTube', 'YouTube Music', 'Twitch',
+    'X.com', 'Netflix', 'Crunchyroll', 'Disney+', 'Prime Video', 'animepahe', 'MyAnimeList', 'AniList', 'Simkl', 'mpv',
+    'VLC media player', 'Apple', 'Spotify',
+    # Launchers and tools
+    'Steam', 'Epic Games Launcher', 'Battle.net', 'CurseForge', 'Medal', 'Valorant Tracker App', 'Auto Clicker',
+    'Wallpaper Engine', 'Discord',
+] + os.getenv('IGNORED_ACTIVITIES', '').split(',') if name.strip()}
+
 
 def is_admin_id(user_id: int) -> bool:
     """True if this Discord user is Roxy's admin"""

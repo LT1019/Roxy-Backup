@@ -1,7 +1,7 @@
 import discord
 from discord.ext import commands
 from discord import app_commands
-from database import RoxyDatabase
+from database import RoxyDatabase, format_duration
 from config import is_admin_id
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
 from patreon import get_patron_tier
@@ -499,7 +499,7 @@ class RoxyStats(commands.Cog):
                     music_minutes = duration // 60
                     music_seconds = duration % 60
                     time_ago = f"<t:{int(last_played.timestamp())}:R>"
-                    history_text += f"• **{song_title}** by *{artist_name}* - {music_minutes}m {music_seconds}s ({time_ago})\n"
+                    history_text += f"• **{song_title}** by *{artist_name}* - {format_duration(duration)} ({time_ago})\n"
                 
                 embed.add_field(
                     name="📈 **Latest 5 Tracks**",
@@ -627,7 +627,7 @@ class RoxyStats(commands.Cog):
                     game_minutes = duration // 60
                     game_seconds = duration % 60
                     time_ago = f"<t:{int(last_played.timestamp())}:R>"
-                    history_text += f"• **{game}** - {game_minutes}m {game_seconds}s ({time_ago})\n"
+                    history_text += f"• **{game}** - {format_duration(duration)} ({time_ago})\n"
                 
                 embed.add_field(
                     name="📈 **Latest 5 Games**",
@@ -782,7 +782,7 @@ class RoxyStats(commands.Cog):
                 game_minutes = duration // 60
                 game_seconds = duration % 60
                 time_ago = f"<t:{int(end_time.timestamp())}:R>"
-                history_text += f"• **{game}** - {game_minutes}m {game_seconds}s ({time_ago})\n"
+                history_text += f"• **{game}** - {format_duration(duration)} ({time_ago})\n"
             
             embed.add_field(
                 name=f"Recent Gaming Sessions (Page {page}/{total_pages})",
@@ -1009,7 +1009,7 @@ class RoxyStats(commands.Cog):
                 music_seconds = duration % 60
                 time_ago = f"<t:{int(end_time.timestamp())}:R>"
                 album_text = f" ({album_name})" if album_name else ""
-                history_text += f"• **{song_title}** by *{artist_name}*{album_text} - {music_minutes}m {music_seconds}s ({time_ago})\n"
+                history_text += f"• **{song_title}** by *{artist_name}*{album_text} - {format_duration(duration)} ({time_ago})\n"
             
             embed.add_field(
                 name=f"Recent Listening Sessions (Page {page}/{total_pages})",

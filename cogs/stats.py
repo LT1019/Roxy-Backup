@@ -151,6 +151,11 @@ class RoxyStats(commands.Cog):
                 "label": "Gaming History",
                 "description": "Complete gaming sessions"
             },
+            "apps": {
+                "emoji": "💻",
+                "label": "Apps",
+                "description": "Time in apps like VS Code, YouTube, Netflix"
+            },
             "music": {
                 "emoji": "🎵",
                 "label": "Music Overview",
@@ -228,6 +233,7 @@ class RoxyStats(commands.Cog):
             )
             
             # === ACTIVITY STATS SECTION ===
+            app_seconds = (await self.db.get_app_stats(member.id))['total_seconds']
             if is_admin:
                 rank_title = "🔱 Bot Administrator"
             else:
@@ -236,6 +242,7 @@ class RoxyStats(commands.Cog):
             activity_stats = f"""
             📝 **{total_messages:,}** Messages
             🎮 **{hours}h {minutes}m** Gaming
+            💻 **{app_seconds // 3600}h {(app_seconds % 3600) // 60}m** Apps
             🎵 **{listening_hours}h {listening_minutes}m** Listening
             🎯 **{rank_title}**
             """
@@ -1144,6 +1151,8 @@ class RoxyStats(commands.Cog):
                 return await create_games_list_embed(current_page)
             elif current_view == "games_history":
                 return await create_games_history_embed(current_page)
+            elif current_view == "apps":
+                return await self.build_apps_embed(member), 1, 1
             elif current_view == "music":
                 return await create_music_embed(), 1, 1
             elif current_view == "music_artists":
@@ -1414,6 +1423,10 @@ class RoxyStats(commands.Cog):
     async def user_apps(self, ctx, member: discord.Member = None):
         """Time spent in non-game apps (VS Code, YouTube, Netflix, ...) - kept separate from gaming"""
         member = member or ctx.author
+        await ctx.send(embed=await self.build_apps_embed(member))
+
+    async def build_apps_embed(self, member):
+        """App time embed - used by rr apps and the Apps view of rr profile"""
         stats = await self.db.get_app_stats(member.id)
 
         embed = discord.Embed(title=f"💻 {member.display_name}'s Apps", color=discord.Color.teal())
@@ -1441,7 +1454,7 @@ class RoxyStats(commands.Cog):
             embed.description = "No app time yet. Apps like VS Code, YouTube and Netflix show up here when Discord shows them as your activity."
 
         embed.set_footer(text="💜 App time is tracked separately - it doesn't count as gaming or earn XP")
-        await ctx.send(embed=embed)
+        return embed
 
     def fit_field(self, text, limit=1024):
         """Fit a list field into Discord's limit by shortening names (bold titles, italic artists,

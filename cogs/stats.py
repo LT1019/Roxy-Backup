@@ -19,11 +19,16 @@ class RoxyStats(commands.Cog):
     
     @commands.hybrid_command(name='profile', aliases=['p', 'stats'], description="Roxy profile: level, XP, gaming and music stats")
     @app_commands.describe(member="Whose profile to show (default: you)")
-    async def user_profile(self, ctx, member: discord.Member = None):
-        """Display comprehensive user profile with navigation"""
+    async def user_profile(self, ctx, member: discord.User = None):
+        """Display comprehensive user profile with navigation (people outside the server: owner only)"""
         await ctx.defer()  # Slash commands must answer within 3 seconds - this buys time
-        if member is None:
-            member = ctx.author
+        target = member or ctx.author
+        # Members of this server for everyone - anyone else only for Roxy's owner
+        in_server = ctx.guild.get_member(target.id) if ctx.guild else None
+        if in_server is None and target.id != ctx.author.id and not is_admin_id(ctx.author.id):
+            await ctx.send(f'❌ Member "{target.id}" not found.')
+            return
+        member = in_server or target
         
         await self.send_profile_with_navigation(ctx, member, "profile")
     

@@ -234,9 +234,12 @@ class RoxyStats(commands.Cog):
             )
             
             # === ACTIVITY STATS SECTION ===
-            app_seconds = (await self.db.get_app_stats(member.id))['total_seconds']
-            voice_seconds = (await self.db.get_voice_stats(member.id))['total_seconds']
-            total_tracked_seconds = (total_playtime or 0) + app_seconds + (total_listening_time or 0)
+            # Include sessions still in progress, so a call or game counts live
+            ongoing = await self.db.get_ongoing_seconds(member.id)
+            live_playtime = (total_playtime or 0) + ongoing['game']
+            app_seconds = (await self.db.get_app_stats(member.id))['total_seconds'] + ongoing['app']
+            voice_seconds = (await self.db.get_voice_stats(member.id))['total_seconds'] + ongoing['voice']
+            total_tracked_seconds = live_playtime + app_seconds + (total_listening_time or 0)
             if is_admin:
                 rank_title = "🔱 Bot Administrator"
             else:
@@ -250,7 +253,7 @@ class RoxyStats(commands.Cog):
             )
             embed.add_field(
                 name="⏱️ **Time Tracked**",
-                value=f"🎮 **{hours}h {minutes}m** Gaming\n💻 **{app_seconds // 3600}h {(app_seconds % 3600) // 60}m** Apps\n🎵 **{listening_hours}h {listening_minutes}m** Listening",
+                value=f"🎮 **{live_playtime // 3600}h {(live_playtime % 3600) // 60}m** Gaming\n💻 **{app_seconds // 3600}h {(app_seconds % 3600) // 60}m** Apps\n🎵 **{listening_hours}h {listening_minutes}m** Listening",
                 inline=True
             )
 

@@ -857,6 +857,21 @@ class RoxyDatabase:
             print(f"❌ Error in get_voice_stats: {e}")
             return {'total_seconds': 0, 'sessions': 0, 'longest_seconds': 0}
 
+    async def get_ongoing_seconds(self, user_id: int) -> Dict[str, int]:
+        """Seconds so far in sessions that haven't ended yet - lets profiles count a call or game live"""
+        ongoing = {'game': 0, 'app': 0, 'voice': 0}
+        try:
+            now = datetime.now()
+            async with aiosqlite.connect(self.db_path) as db:
+                for key, table in (('game', 'game_sessions'), ('app', 'app_sessions'), ('voice', 'voice_sessions')):
+                    async with db.execute(f"SELECT start_time FROM {table} WHERE user_id = ? AND end_time IS NULL", (user_id,)) as cursor:
+                        for (start,) in await cursor.fetchall():
+                            elapsed = int((now - datetime.fromisoformat(start)).total_seconds())
+                            ongoing[key] += min(max(elapsed, 0), MAX_SESSION_SECONDS)
+        except Exception as e:
+            print(f"❌ Error in get_ongoing_seconds: {e}")
+        return ongoing
+
     async def get_app_stats(self, user_id: int) -> Dict:
         """Total app time, favorite apps and recent app sessions for rr apps"""
         try:

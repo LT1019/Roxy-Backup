@@ -910,10 +910,30 @@ class RoxyDatabase:
             'xp': 'xp'
         }
         
+        # Voice and app time live in their own session tables - total them per user
+        session_tables = {'voice': 'voice_sessions', 'apps': 'app_sessions'}
+        if category in session_tables:
+            try:
+                async with aiosqlite.connect(self.db_path) as db:
+                    async with db.execute(f"""
+                        SELECT users.user_id, users.username, users.display_name, SUM(s.duration) AS total
+                        FROM {session_tables[category]} s
+                        JOIN users ON users.user_id = s.user_id
+                        WHERE s.duration IS NOT NULL
+                        GROUP BY users.user_id
+                        HAVING total > 0
+                        ORDER BY total DESC
+                        LIMIT ?
+                    """, (limit,)) as cursor:
+                        return await cursor.fetchall()
+            except Exception as e:
+                print(f"❌ Error in get_leaderboard ({category}): {e}")
+                return []
+
         if category not in valid_categories:
             print(f"❌ Invalid leaderboard category: {category}")
             return []
-        
+
         try:
             column = valid_categories[category]
             async with aiosqlite.connect(self.db_path) as db:

@@ -536,7 +536,7 @@ async def help_command(ctx, *, command=None):
     
     embed.add_field(
         name="🏆 Leaderboards",
-        value="`rr top messages` - Message leaderboard\n`rr top playtime` - Gaming leaderboard\n`rr top listening` - Music listening leaderboard\n`rr top level` - Level rankings",
+        value="`rr top messages` - Message leaderboard\n`rr top voice` - Voice call leaderboard\n`rr top playtime` - Gaming leaderboard\n`rr top apps` - App time leaderboard\n`rr top listening` - Music listening leaderboard\n`rr top level` - Level rankings",
         inline=False
     )
     
@@ -636,59 +636,6 @@ async def debug_user(ctx, member: discord.Member = None):
         
     except Exception as e:
         await ctx.send(f"❌ Debug error: {e}")
-
-@roxy.command(name='sessions')
-async def active_sessions(ctx):
-    """View active gaming and listening sessions"""
-    embed = discord.Embed(
-        title="🎮🎵 Active Sessions",
-        description="Currently active gaming and listening sessions:",
-        color=discord.Color.blue()
-    )
-    
-    # Gaming sessions
-    if roxy.active_sessions:
-        session_list = ""
-        for user_id, game in roxy.active_sessions.items():
-            member = ctx.guild.get_member(user_id)
-            if member:
-                session_list += f"• **{member.display_name}** playing *{game}*\n"
-        
-        embed.add_field(
-            name="🎮 Gaming Sessions",
-            value=session_list or "None found in this server",
-            inline=False
-        )
-    else:
-        embed.add_field(
-            name="🎮 Gaming Sessions",
-            value="No one is currently gaming!",
-            inline=False
-        )
-    
-    # Music listening sessions
-    if roxy.active_listening:
-        listening_list = ""
-        for user_id, music_info in roxy.active_listening.items():
-            member = ctx.guild.get_member(user_id)
-            if member:
-                song = music_info.get('song', 'Unknown')
-                artist = music_info.get('artist', 'Unknown')
-                listening_list += f"• **{member.display_name}** listening to *{song}* by *{artist}*\n"
-        
-        embed.add_field(
-            name="🎵 Listening Sessions",
-            value=listening_list or "None found in this server",
-            inline=False
-        )
-    else:
-        embed.add_field(
-            name="🎵 Listening Sessions",
-            value="No one is currently listening to music!",
-            inline=False
-        )
-    
-    await ctx.send(embed=embed)
 
 @roxy.command(name='testxp')
 @is_admin()

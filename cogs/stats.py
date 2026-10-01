@@ -393,8 +393,7 @@ class RoxyStats(commands.Cog):
                 name="📊 **Current Progress**",
                 value=f"**Level:** {level}\n"
                       f"**Progress:** {progress_xp:,} / {level_size:,} XP ({progress_percentage}%)\n"
-                      f"**Total XP:** {xp:,} (since Level 1)\n"
-                      f"**Next level at:** {next_level_xp:,} XP ({next_level_xp - xp:,} to go)",
+                      f"**Total XP:** {xp:,}",
                 inline=False
             )
 
@@ -1206,7 +1205,9 @@ class RoxyStats(commands.Cog):
         category = category.lower()
         categories = {
             'messages': {'label': 'Messages', 'emoji': '💬', 'tip': 'Stay active in chat to climb!'},
+            'voice': {'label': 'Voice', 'emoji': '🎙️', 'tip': 'Hang out in voice channels to climb!'},
             'playtime': {'label': 'Playtime', 'emoji': '🎮', 'tip': 'Game more to reach the top!'},
+            'apps': {'label': 'Apps', 'emoji': '💻', 'tip': 'Time in apps like VS Code and YouTube counts!'},
             'listening': {'label': 'Listening', 'emoji': '🎵', 'tip': 'Listen to more music to climb!'},
             'level': {'label': 'Level', 'emoji': '⭐', 'tip': 'Balance all activities!'},
         }
@@ -1267,7 +1268,7 @@ class RoxyStats(commands.Cog):
                     name = f"👑 {name}"
 
                 # Format value based on category
-                if state['category'] in ['playtime', 'listening']:
+                if state['category'] in ['playtime', 'listening', 'voice', 'apps']:
                     formatted_value = f"{value // 3600}h {(value % 3600) // 60}m"
                 elif state['category'] in ['xp', 'messages']:
                     formatted_value = f"{value:,}"
@@ -1448,6 +1449,92 @@ class RoxyStats(commands.Cog):
 
         view = ProfileInfoView('server')
         view.message = await ctx.send(embed=create_embed('server'), view=view)
+
+    @commands.command(name='sessions')
+    @commands.guild_only()
+    async def active_sessions(self, ctx):
+        """Who is gaming, in voice, using apps or listening right now (owner gets a Global view)"""
+        bot = self.bot
+        guild = ctx.guild
+        state = {'global': False}
+
+        def name_of(user_id):
+            if not state['global']:
+                member = guild.get_member(user_id)
+                return member.display_name if member else None
+            user = bot.get_user(user_id)
+            return user.display_name if user else f"User {user_id}"
+
+        def in_scope(user_id):
+            return state['global'] or guild.get_member(user_id) is not None
+
+        def section(lines, empty):
+            if not lines:
+                return empty
+            text = ""
+            for i, line in enumerate(lines):
+                if len(text) + len(line) + 30 > 1024:
+                    return text + f"*… and {len(lines) - i} more*"
+                text += line + "\n"
+            return text
+
+        def create_embed():
+            scope = "🌍 All servers" if state['global'] else f"🏠 {guild.name}"
+            embed = discord.Embed(title="📡 Active Sessions", description=f"Happening right now • {scope}", color=discord.Color.blue())
+
+            gaming = [f"• **{name_of(uid)}** playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
+            embed.add_field(name=f"🎮 Gaming ({len(gaming)})", value=section(gaming, "No one is gaming right now"), inline=False)
+
+            voice = []
+            for uid, call_guild_id in bot.active_voice.items():
+                if state['global']:
+                    call_guild = bot.get_guild(call_guild_id)
+                    voice.append(f"• **{name_of(uid)}** in **{call_guild.name if call_guild else 'a server'}**")
+                elif call_guild_id == guild.id:
+                    voice.append(f"• **{name_of(uid)}** in a call")
+            embed.add_field(name=f"🎙️ Voice ({len(voice)})", value=section(voice, "No one is in a voice call right now"), inline=False)
+
+            apps = [f"• **{name_of(uid)}** using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
+            embed.add_field(name=f"💻 Apps ({len(apps)})", value=section(apps, "No one is using an app right now"), inline=False)
+
+            listening = [f"• **{name_of(uid)}** listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
+                         for uid, info in bot.active_listening.items() if in_scope(uid)]
+            embed.add_field(name=f"🎵 Listening ({len(listening)})", value=section(listening, "No one is listening to music right now"), inline=False)
+            return embed
+
+        # Only the owner gets the Global button - everyone else sees just their own server
+        if not is_admin_id(ctx.author.id):
+            await ctx.send(embed=create_embed())
+            return
+
+        class SessionsView(discord.ui.View):
+            def __init__(self):
+                super().__init__(timeout=300)
+                self.message = None
+                self.toggle_scope.label = "🏠 Server" if state['global'] else "🌍 Global"
+
+            async def interaction_check(self, interaction):
+                if not is_admin_id(interaction.user.id):
+                    await interaction.response.send_message("❌ Only Roxy's owner can use this button.", ephemeral=True)
+                    return False
+                return True
+
+            @discord.ui.button(label='🌍 Global', style=discord.ButtonStyle.primary)
+            async def toggle_scope(self, interaction, button):
+                state['global'] = not state['global']
+                new_view = SessionsView()
+                new_view.message = interaction.message
+                self.stop()
+                await interaction.response.edit_message(embed=create_embed(), view=new_view)
+
+            async def on_timeout(self):
+                try:
+                    await self.message.edit(view=None)
+                except (AttributeError, discord.HTTPException):
+                    pass
+
+        view = SessionsView()
+        view.message = await ctx.send(embed=create_embed(), view=view)
 
     @commands.command(name='apps', aliases=['app'])
     async def user_apps(self, ctx, member: discord.Member = None):

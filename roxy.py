@@ -602,17 +602,25 @@ async def help_command(ctx, *, command=None):
             state['page'] = self.values[0]
             await interaction.response.edit_message(embed=current_embed(), view=HelpView())
 
+    class ModeSelect(discord.ui.Select):
+        def __init__(self):
+            options = [
+                discord.SelectOption(label='Detailed', emoji='📖', description='Every command with an explanation', value='detailed', default=not state['compact']),
+                discord.SelectOption(label='Compact', emoji='📋', description='Just the commands, grouped', value='compact', default=state['compact']),
+            ]
+            super().__init__(placeholder="📖 Choose a view mode...", options=options, row=1)
+
+        async def callback(self, interaction):
+            state['compact'] = self.values[0] == 'compact'
+            await interaction.response.edit_message(embed=current_embed(), view=HelpView())
+
     class HelpView(discord.ui.View):
         def __init__(self):
             super().__init__(timeout=300)
             # The page dropdown only for server Admins and the owner
             if is_admin_here:
                 self.add_item(HelpSelect())
-            # The active mode is highlighted and can't be clicked again
-            self.detailed_mode.disabled = not state['compact']
-            self.detailed_mode.style = discord.ButtonStyle.primary if not state['compact'] else discord.ButtonStyle.secondary
-            self.compact_mode.disabled = state['compact']
-            self.compact_mode.style = discord.ButtonStyle.primary if state['compact'] else discord.ButtonStyle.secondary
+            self.add_item(ModeSelect())
             for label, url in LINK_BUTTONS:
                 self.add_item(discord.ui.Button(label=label, url=url, row=2))
 
@@ -621,16 +629,6 @@ async def help_command(ctx, *, command=None):
                 await interaction.response.send_message("❌ This menu isn't yours - use `rr help` to get your own.", ephemeral=True)
                 return False
             return True
-
-        @discord.ui.button(label='📖 Detailed', row=1)
-        async def detailed_mode(self, interaction, button):
-            state['compact'] = False
-            await interaction.response.edit_message(embed=current_embed(), view=HelpView())
-
-        @discord.ui.button(label='📋 Compact', row=1)
-        async def compact_mode(self, interaction, button):
-            state['compact'] = True
-            await interaction.response.edit_message(embed=current_embed(), view=HelpView())
 
     await ctx.send(embed=current_embed(), view=HelpView())
 

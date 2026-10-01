@@ -1383,31 +1383,39 @@ class RoxyStats(commands.Cog):
         await ctx.send(embed=embed)
 
     @commands.hybrid_command(name='userinfo', aliases=['profileinfo', 'userprofile', 'whois'], description="Discord profile info: Server and Global views")
-    @app_commands.describe(member="Whose Discord profile to show (default: you)")
+    @app_commands.describe(member="Whose Discord profile to show - anyone on Discord, by mention or ID (default: you)")
     @app_commands.guild_only()
     @commands.guild_only()
-    async def profile_info(self, ctx, member: discord.Member = None):
-        """Discord profile information for you or a member of this server - Server and Global views"""
+    async def profile_info(self, ctx, member: discord.User = None):
+        """Discord profile for anyone - Server and Global views for members, Global for everyone else"""
         await ctx.defer()  # Slash commands must answer within 3 seconds - this buys time
-        member = member or ctx.author
+        target = member or ctx.author
+        # Works for anyone on Discord, Roxy user or not - the Server view needs them to be in this server
+        member = ctx.guild.get_member(target.id)
         try:
             # Raw API data: banner and accent color, plus nameplate/name style/tag that discord.py 2.5 doesn't parse
-            raw = await self.bot.http.get_user(member.id)
+            raw = await self.bot.http.get_user(target.id)
             user = discord.User(state=self.bot._connection, data=raw)
         except discord.HTTPException:
             raw, user = None, None
 
+        if member is None and user is None:
+            await ctx.send("❌ I couldn't find that user.")
+            return
+
         views = {
-            'server': {'label': 'Server', 'emoji': '🏠', 'description': f'Profile in {ctx.guild.name}'[:100]},
             'global': {'label': 'Global', 'emoji': '🌍', 'description': 'Badges, nameplate, decoration, name style, banner'},
         }
+        if member is not None:
+            views = {'server': {'label': 'Server', 'emoji': '🏠', 'description': f'Profile in {ctx.guild.name}'[:100]}, **views}
 
         def create_embed(view_key):
-            if view_key == 'global' and user:
+            if (view_key == 'global' or member is None) and user:
                 embed = global_profile_embed(user, raw)
             else:
                 embed = profile_embed(member, user)
-            embed.set_footer(text=f"Requested by {ctx.author.display_name} • Use rr profile for Roxy stats", icon_url=ctx.author.display_avatar.url)
+            note = "Not in this server - Global profile only • " if member is None else ""
+            embed.set_footer(text=f"{note}Requested by {ctx.author.display_name} • Use rr profile for Roxy stats", icon_url=ctx.author.display_avatar.url)
             return embed
 
         class ProfileInfoSelect(discord.ui.Select):
@@ -1428,7 +1436,7 @@ class RoxyStats(commands.Cog):
             def __init__(self, current):
                 super().__init__(timeout=300)
                 self.message = None
-                if user:
+                if user and len(views) > 1:  # Non-members only have the Global view
                     self.add_item(ProfileInfoSelect(current))
 
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
@@ -1448,8 +1456,9 @@ class RoxyStats(commands.Cog):
                 except (AttributeError, discord.HTTPException):
                     pass
 
-        view = ProfileInfoView('server')
-        view.message = await ctx.send(embed=create_embed('server'), view=view)
+        first_view = 'server' if member is not None else 'global'
+        view = ProfileInfoView(first_view)
+        view.message = await ctx.send(embed=create_embed(first_view), view=view)
 
     @commands.command(name='info', aliases=['about'])
     async def roxy_info(self, ctx):

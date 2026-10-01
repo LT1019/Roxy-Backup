@@ -198,58 +198,6 @@ class RoxyAdmin(commands.Cog):
         self.bot = bot
         self.db = RoxyDatabase()
     
-    @commands.command(name='admin', aliases=['a'])
-    @is_admin()
-    async def admin_help(self, ctx):
-        """Admin help menu - Only visible to admin, silent for others"""
-        print(f"👑 Admin {ctx.author} accessed admin panel")
-        
-        embed = discord.Embed(
-            title="👑 Roxy Owner Control Panel",
-            description="**Admin-Only Commands** for managing Roxy Bot",
-            color=discord.Color.red()
-        )
-        
-        embed.add_field(
-            name="👥 User Management",
-            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr deleteuser <@user or ID>` - Erase all their data (deletion requests)\n`rr viewuser <@user>` - View detailed user data",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🏆 Achievement Management",
-            value="`rr ach` - Achievement control panel\n`rr ach users <achievement>` - Who has an achievement\n`rr giveach <@user> <achievement>` - Grant achievement\n`rr removeach <@user> <achievement>` - Remove achievement",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🗄️ Database Management",
-            value="`/dbstats` - Database statistics & Excel export (only you)\n`rr cleanup` - Clean inactive users\n`rr backup` - Create database backup\n`rr totalstats` - Global statistics\n`rr serverstats [server id]` - Server info & members",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🤖 Bot Control",
-            value="`rr setstatus <message>` - Set bot status (`clear` to resume rotation)\n`rr announce [#channel] <message>` - Send announcement\n`rr shutdown` - Shutdown bot\n`rr reload` - Reload cogs",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="🔧 Debug & Maintenance",
-            value="`rr forceupdate <@user>` - Force update user\n`rr clearsessions` - End all active sessions\n`/logs [limit]` - View recent logs (only you can see them)\n`rr testxp` - Test XP system",
-            inline=False
-        )
-        
-        embed.add_field(
-            name="⚡ Quick Access",
-            value="`rr admin` or `rr a` - This owner panel\n`rrhelp` - The space after rr is optional",
-            inline=False
-        )
-        
-        embed.set_footer(text="👑 You are Roxy's Owner | Owner commands are ignored for everyone else")
-        
-        await ctx.send(embed=embed)
-
     # Achievement Management Commands (unchanged from previous version)
     # The group itself has no check so that `rr ach list` stays public;
     # the control panel and the give/remove/users sub-commands are admin-only.

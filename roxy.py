@@ -519,57 +519,102 @@ async def help_command(ctx, *, command=None):
     )
     
     embed.set_footer(text="💡 Prefix: rr (e.g. rr help)")
-    user_embed = embed
+    user_detailed = embed
+
+    user_compact = discord.Embed(title="💜 Roxy's Command Center", description="Compact view - switch to **Detailed** for explanations.", color=discord.Color.purple())
+    user_compact.add_field(name="📊 Profile", value="`rr p` `rr level` `rr games` `rr music` `rr apps` `/profile`", inline=False)
+    user_compact.add_field(name="🏆 Leaderboards", value="`rr top` + `messages` `voice` `playtime` `apps` `listening` `level`", inline=False)
+    user_compact.add_field(name="ℹ️ Info", value="`rr serverinfo` `rr userinfo` `/userinfo` `rr info` `rr ping` `rr invite`", inline=False)
+    user_compact.add_field(name="🔧 Other", value="`rr help games` `rr help music` `rr sessions` `rr debug` `rr refresh`", inline=False)
+    user_compact.set_footer(text="💡 Prefix: rr (e.g. rr help)")
 
     # Help pages by role: everyone gets User, server Admins also Admin, Roxy's owner also Owner
     is_owner = is_admin_id(ctx.author.id)
     is_admin_here = is_owner or (ctx.guild is not None and is_server_admin(ctx.author))
-    if not is_admin_here:
-        await ctx.send(embed=user_embed, view=link_buttons_view())
-        return
 
-    admin_embed = discord.Embed(
+    admin_detailed = discord.Embed(
         title="🛡️ Server Admin Commands",
         description="For members with **Administrator** permission and the server owner. These only affect **this server**.",
         color=discord.Color.blue()
     )
-    admin_embed.add_field(name="📊 Server", value="`rr serverstats` - Overview, member list and Roxy stats for this server", inline=False)
-    admin_embed.add_field(name="📢 Announcements", value="`rr announce [#channel] <message>` - Post an announcement in this server", inline=False)
-    admin_embed.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
+    admin_detailed.add_field(name="📊 Server", value="`rr serverstats` - Overview, member list and Roxy stats for this server", inline=False)
+    admin_detailed.add_field(name="📢 Announcements", value="`rr announce [#channel] <message>` - Post an announcement in this server", inline=False)
+    admin_detailed.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
+
+    admin_compact = discord.Embed(title="🛡️ Server Admin Commands", description="`rr serverstats` `rr announce`", color=discord.Color.blue())
+    admin_compact.set_footer(text="👑 Owner view" if is_owner else "🛡️ You are an Admin of this server")
 
     pages = {
-        'user': ('User', '💜', 'Commands for everyone', user_embed),
-        'admin': ('Admin', '🛡️', 'Server Admin commands', admin_embed),
+        'user': ('User', '💜', 'Commands for everyone', user_detailed, user_compact),
+        'admin': ('Admin', '🛡️', 'Server Admin commands', admin_detailed, admin_compact),
     }
 
     if is_owner:
-        owner_embed = discord.Embed(
-            title="👑 Owner Commands",
-            description="Only Roxy's owner can use these. Full panel: `rr admin`",
-            color=discord.Color.gold()
+        owner_detailed = discord.Embed(title="👑 Roxy Owner Control Panel", description="**Owner-only commands** for managing Roxy Bot", color=discord.Color.gold())
+        owner_detailed.add_field(
+            name="👥 User Management",
+            value="`rr addxp <@user> <amount>` - Give XP to user\n`rr setlevel <@user> <level>` - Set user level\n`rr resetuser <@user>` - Reset user stats\n`rr deleteuser <@user or ID>` - Erase all their data (deletion requests)\n`rr viewuser <@user>` - View detailed user data\n`rr forceupdate <@user>` - Recalculate a user's totals",
+            inline=False
         )
-        owner_embed.add_field(name="👥 Users", value="`rr addxp` `rr setlevel` `rr resetuser` `rr deleteuser` `rr viewuser` `rr forceupdate`", inline=False)
-        owner_embed.add_field(name="🏆 Achievements", value="`rr ach` `rr giveach` `rr removeach`", inline=False)
-        owner_embed.add_field(name="🗄️ Data & Stats", value="`/dbstats` `/logs` `rr totalstats` `rr serverstats <id>` `rr cleanup` `rr backup`", inline=False)
-        owner_embed.add_field(name="🤖 Bot Control", value="`rr setstatus` `rr announce` (any server) `rr reload` `rr shutdown` `rr clearsessions` `rr presence` `rr testxp`", inline=False)
-        owner_embed.set_footer(text="👑 You are Roxy's Owner")
-        pages['owner'] = ('Owner', '👑', 'Owner-only commands', owner_embed)
+        owner_detailed.add_field(
+            name="🏆 Achievement Management",
+            value="`rr ach` - Achievement control panel\n`rr ach users <achievement>` - Who has an achievement\n`rr giveach <@user> <achievement>` - Grant achievement\n`rr removeach <@user> <achievement>` - Remove achievement",
+            inline=False
+        )
+        owner_detailed.add_field(
+            name="🗄️ Database Management",
+            value="`/dbstats` - Database statistics & Excel export (only you)\n`rr cleanup` - Clean inactive users\n`rr backup` - Create database backup\n`rr totalstats` - Global statistics\n`rr serverstats [server id]` - Any server's info & members",
+            inline=False
+        )
+        owner_detailed.add_field(
+            name="🤖 Bot Control",
+            value="`rr setstatus <message>` - Set bot status (`clear` to resume rotation)\n`rr announce [#channel] <message>` - Announcement in any server\n`rr reload` - Reload Roxy's code\n`rr shutdown` - Save sessions and shut down",
+            inline=False
+        )
+        owner_detailed.add_field(
+            name="🔧 Debug & Maintenance",
+            value="`rr clearsessions` - End all active sessions\n`rr presence [@user]` - What Discord shares with Roxy\n`/logs [limit]` - Recent logs (only you can see them)\n`rr testxp` - Test XP system",
+            inline=False
+        )
+        owner_detailed.set_footer(text="👑 You are Roxy's Owner | Owner commands are ignored for everyone else")
+
+        owner_compact = discord.Embed(title="👑 Owner Commands", description="Compact view - switch to **Detailed** for explanations.", color=discord.Color.gold())
+        owner_compact.add_field(name="👥 Users", value="`rr addxp` `rr setlevel` `rr resetuser` `rr deleteuser` `rr viewuser` `rr forceupdate`", inline=False)
+        owner_compact.add_field(name="🏆 Achievements", value="`rr ach` `rr ach users` `rr giveach` `rr removeach`", inline=False)
+        owner_compact.add_field(name="🗄️ Data & Stats", value="`/dbstats` `/logs` `rr totalstats` `rr serverstats <id>` `rr cleanup` `rr backup`", inline=False)
+        owner_compact.add_field(name="🤖 Bot Control", value="`rr setstatus` `rr announce` `rr reload` `rr shutdown` `rr clearsessions` `rr presence` `rr testxp`", inline=False)
+        owner_compact.set_footer(text="👑 You are Roxy's Owner")
+        pages['owner'] = ('Owner', '👑', 'Owner-only commands', owner_detailed, owner_compact)
+
+    state = {'page': 'user', 'compact': False}
+
+    def current_embed():
+        _, _, _, detailed, compact = pages[state['page']]
+        return compact if state['compact'] else detailed
 
     class HelpSelect(discord.ui.Select):
-        def __init__(self, current):
-            options = [discord.SelectOption(label=label, emoji=emoji, description=desc, value=key, default=(key == current))
-                       for key, (label, emoji, desc, _) in pages.items()]
+        def __init__(self):
+            options = [discord.SelectOption(label=label, emoji=emoji, description=desc, value=key, default=(key == state['page']))
+                       for key, (label, emoji, desc, _, _) in pages.items()]
             super().__init__(placeholder="📚 Choose a help page...", options=options, row=0)
 
         async def callback(self, interaction):
-            await interaction.response.edit_message(embed=pages[self.values[0]][3], view=HelpView(self.values[0]))
+            state['page'] = self.values[0]
+            await interaction.response.edit_message(embed=current_embed(), view=HelpView())
 
     class HelpView(discord.ui.View):
-        def __init__(self, current):
+        def __init__(self):
             super().__init__(timeout=300)
-            self.add_item(HelpSelect(current))
+            # The page dropdown only for server Admins and the owner
+            if is_admin_here:
+                self.add_item(HelpSelect())
+            # The active mode is highlighted and can't be clicked again
+            self.detailed_mode.disabled = not state['compact']
+            self.detailed_mode.style = discord.ButtonStyle.primary if not state['compact'] else discord.ButtonStyle.secondary
+            self.compact_mode.disabled = state['compact']
+            self.compact_mode.style = discord.ButtonStyle.primary if state['compact'] else discord.ButtonStyle.secondary
             for label, url in LINK_BUTTONS:
-                self.add_item(discord.ui.Button(label=label, url=url, row=1))
+                self.add_item(discord.ui.Button(label=label, url=url, row=2))
 
         async def interaction_check(self, interaction):
             if interaction.user.id != ctx.author.id:
@@ -577,7 +622,17 @@ async def help_command(ctx, *, command=None):
                 return False
             return True
 
-    await ctx.send(embed=user_embed, view=HelpView('user'))
+        @discord.ui.button(label='📖 Detailed', row=1)
+        async def detailed_mode(self, interaction, button):
+            state['compact'] = False
+            await interaction.response.edit_message(embed=current_embed(), view=HelpView())
+
+        @discord.ui.button(label='📋 Compact', row=1)
+        async def compact_mode(self, interaction, button):
+            state['compact'] = True
+            await interaction.response.edit_message(embed=current_embed(), view=HelpView())
+
+    await ctx.send(embed=current_embed(), view=HelpView())
 
 # Debug commands (Available to everyone)
 @roxy.command(name='debug')

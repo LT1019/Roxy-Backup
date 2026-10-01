@@ -1484,7 +1484,7 @@ class RoxyStats(commands.Cog):
             embed.add_field(name="💜 Patreon Supporters", value="Be the first! Find the Patreon button under `rr help`.", inline=False)
 
         if is_admin_id(ctx.author.id):
-            embed.add_field(name="👑 Owner Commands", value="Use `rr admin` for the owner control panel", inline=False)
+            embed.add_field(name="👑 Owner Commands", value="Use `rr help` and pick **Owner** in the dropdown", inline=False)
             embed.set_footer(text="Made with ❤️ using discord.py | You are Roxy's Owner")
         else:
             embed.set_footer(text="Made with ❤️ using discord.py | Use rr help for commands")

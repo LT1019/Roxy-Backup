@@ -1649,6 +1649,11 @@ class RoxyStats(commands.Cog):
                 state['page'] = 1
                 await self.refresh(interaction)
 
+            @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
+            async def close_menu(self, interaction, button):
+                self.stop()
+                await interaction.response.edit_message(view=None)
+
             async def on_timeout(self):
                 try:
                     await self.message.edit(view=None)

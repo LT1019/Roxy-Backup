@@ -11,7 +11,7 @@ __pycache__/
 *.pyc
 
 # Runtime database and backups (contains Discord user data)
-data/*.db
+data/
 
 # Background run logs
 logs/

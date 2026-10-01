@@ -3,9 +3,9 @@ from discord.ext import commands
 from discord import app_commands
 from database import (RoxyDatabase, format_duration, MESSAGE_XP, VOICE_XP_PER_MINUTE, GAMING_XP_PER_MINUTE,
                       APP_XP_PER_MINUTE, LISTENING_XP_PER_2_MINUTES)
-from config import is_admin_id
+from config import is_admin_id, LINK_BUTTONS
 from info_embeds import server_overview_embed, profile_embed, global_profile_embed
-from patreon import get_patron_tier
+from patreon import get_patron_tier, get_patrons
 from datetime import datetime, timedelta
 import asyncio
 import re
@@ -1450,6 +1450,55 @@ class RoxyStats(commands.Cog):
         view = ProfileInfoView('server')
         view.message = await ctx.send(embed=create_embed('server'), view=view)
 
+    @commands.command(name='info', aliases=['about'])
+    async def roxy_info(self, ctx):
+        """Learn about Roxy"""
+        bot = self.bot
+        embed = discord.Embed(
+            title="🤖 About Roxy Bot",
+            description="Hi! I'm **Roxy**, your friendly neighborhood stats bot! I track gaming, voice calls, apps, music and messages - and help you level up!",
+            color=discord.Color.purple()
+        )
+
+        embed.add_field(
+            name="📊 What I Do",
+            value="• Track your gaming sessions\n• Track voice call time\n• Track time in apps (VS Code, YouTube...)\n• Monitor music listening (Spotify)\n• Monitor message counts\n• XP and leveling system\n• Server leaderboards\n• User profiles & statistics",
+            inline=False
+        )
+
+        embed.add_field(name="🏠 Servers", value=len(bot.guilds), inline=True)
+        embed.add_field(name="👥 Users", value=len(bot.users), inline=True)
+        embed.add_field(name="🎮 Active Gamers", value=len(bot.active_sessions), inline=True)
+        embed.add_field(name="🎙️ Active Calls", value=len(bot.active_voice), inline=True)
+        embed.add_field(name="💻 Active Apps", value=len(bot.active_apps), inline=True)
+        embed.add_field(name="🎵 Active Listeners", value=len(bot.active_listening), inline=True)
+
+        # Patreon credits - everyone with a Supporter/Fan/VIP role in Roxy's server
+        patrons = get_patrons(bot)
+        if patrons:
+            credits = ", ".join(f"{tier['emoji']} {member.display_name}" for member, tier in patrons)
+            if len(credits) > 1000:
+                credits = credits[:1000].rsplit(", ", 1)[0] + " … and more!"
+            embed.add_field(name=f"💜 Patreon Supporters ({len(patrons)})", value=credits, inline=False)
+        else:
+            embed.add_field(name="💜 Patreon Supporters", value="Be the first! Find the Patreon button under `rr help`.", inline=False)
+
+        if is_admin_id(ctx.author.id):
+            embed.add_field(name="👑 Admin Commands", value="Use `rr admin` for admin controls", inline=False)
+            embed.set_footer(text="Made with ❤️ using discord.py | You are Roxy's Administrator")
+        else:
+            embed.set_footer(text="Made with ❤️ using discord.py | Use rr help for commands")
+
+        if bot.user:
+            embed.set_thumbnail(url=bot.user.display_avatar.url)
+
+        view = None
+        if LINK_BUTTONS:
+            view = discord.ui.View()
+            for label, url in LINK_BUTTONS:
+                view.add_item(discord.ui.Button(label=label, url=url))
+        await ctx.send(embed=embed, view=view)
+
     @commands.command(name='sessions')
     @commands.guild_only()
     async def active_sessions(self, ctx):
@@ -1478,54 +1527,83 @@ class RoxyStats(commands.Cog):
                 text += line + "\n"
             return text
 
+        categories = {
+            'all': {'label': 'All', 'emoji': '📡'},
+            'gaming': {'label': 'Gaming', 'emoji': '🎮'},
+            'voice': {'label': 'Voice', 'emoji': '🎙️'},
+            'apps': {'label': 'Apps', 'emoji': '💻'},
+            'listening': {'label': 'Listening', 'emoji': '🎵'},
+        }
+        state['category'] = 'all'
+
         def create_embed():
             scope = "🌍 All servers" if state['global'] else f"🏠 {guild.name}"
             embed = discord.Embed(title="📡 Active Sessions", description=f"Happening right now • {scope}", color=discord.Color.blue())
+            show = lambda key: state['category'] in ('all', key)
 
-            gaming = [f"• **{name_of(uid)}** playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
-            embed.add_field(name=f"🎮 Gaming ({len(gaming)})", value=section(gaming, "No one is gaming right now"), inline=False)
+            if show('gaming'):
+                gaming = [f"• **{name_of(uid)}** playing *{game}*" for uid, game in bot.active_sessions.items() if in_scope(uid)]
+                embed.add_field(name=f"🎮 Gaming ({len(gaming)})", value=section(gaming, "No one is gaming right now"), inline=False)
 
-            voice = []
-            for uid, call_guild_id in bot.active_voice.items():
-                if state['global']:
-                    call_guild = bot.get_guild(call_guild_id)
-                    voice.append(f"• **{name_of(uid)}** in **{call_guild.name if call_guild else 'a server'}**")
-                elif call_guild_id == guild.id:
-                    voice.append(f"• **{name_of(uid)}** in a call")
-            embed.add_field(name=f"🎙️ Voice ({len(voice)})", value=section(voice, "No one is in a voice call right now"), inline=False)
+            if show('voice'):
+                voice = []
+                for uid, call_guild_id in bot.active_voice.items():
+                    if state['global']:
+                        call_guild = bot.get_guild(call_guild_id)
+                        voice.append(f"• **{name_of(uid)}** in **{call_guild.name if call_guild else 'a server'}**")
+                    elif call_guild_id == guild.id:
+                        voice.append(f"• **{name_of(uid)}** in a call")
+                embed.add_field(name=f"🎙️ Voice ({len(voice)})", value=section(voice, "No one is in a voice call right now"), inline=False)
 
-            apps = [f"• **{name_of(uid)}** using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
-            embed.add_field(name=f"💻 Apps ({len(apps)})", value=section(apps, "No one is using an app right now"), inline=False)
+            if show('apps'):
+                apps = [f"• **{name_of(uid)}** using *{app}*" for uid, app in bot.active_apps.items() if in_scope(uid)]
+                embed.add_field(name=f"💻 Apps ({len(apps)})", value=section(apps, "No one is using an app right now"), inline=False)
 
-            listening = [f"• **{name_of(uid)}** listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
-                         for uid, info in bot.active_listening.items() if in_scope(uid)]
-            embed.add_field(name=f"🎵 Listening ({len(listening)})", value=section(listening, "No one is listening to music right now"), inline=False)
+            if show('listening'):
+                listening = [f"• **{name_of(uid)}** listening to *{info.get('song', 'Unknown')}* by *{info.get('artist', 'Unknown')}*"
+                             for uid, info in bot.active_listening.items() if in_scope(uid)]
+                embed.add_field(name=f"🎵 Listening ({len(listening)})", value=section(listening, "No one is listening to music right now"), inline=False)
             return embed
 
-        # Only the owner gets the Global button - everyone else sees just their own server
-        if not is_admin_id(ctx.author.id):
-            await ctx.send(embed=create_embed())
-            return
+        is_owner = is_admin_id(ctx.author.id)
+
+        class SessionsSelect(discord.ui.Select):
+            def __init__(self):
+                options = [discord.SelectOption(label=info['label'], emoji=info['emoji'], value=key, default=(key == state['category']))
+                           for key, info in categories.items()]
+                super().__init__(placeholder="📡 Choose sessions to show...", options=options, row=0)
+
+            async def callback(self, interaction):
+                state['category'] = self.values[0]
+                await self.view.refresh(interaction)
 
         class SessionsView(discord.ui.View):
             def __init__(self):
                 super().__init__(timeout=300)
                 self.message = None
-                self.toggle_scope.label = "🏠 Server" if state['global'] else "🌍 Global"
+                self.add_item(SessionsSelect())
+                # Only the owner gets the Global button - everyone else sees just their own server
+                if is_owner:
+                    self.toggle_scope.label = "🏠 Server" if state['global'] else "🌍 Global"
+                else:
+                    self.remove_item(self.toggle_scope)
 
-            async def interaction_check(self, interaction):
-                if not is_admin_id(interaction.user.id):
-                    await interaction.response.send_message("❌ Only Roxy's owner can use this button.", ephemeral=True)
-                    return False
-                return True
-
-            @discord.ui.button(label='🌍 Global', style=discord.ButtonStyle.primary)
-            async def toggle_scope(self, interaction, button):
-                state['global'] = not state['global']
+            async def refresh(self, interaction):
                 new_view = SessionsView()
                 new_view.message = interaction.message
                 self.stop()
                 await interaction.response.edit_message(embed=create_embed(), view=new_view)
+
+            async def interaction_check(self, interaction):
+                if interaction.user.id != ctx.author.id:
+                    await interaction.response.send_message("❌ This menu isn't yours - use `rr sessions` to get your own.", ephemeral=True)
+                    return False
+                return True
+
+            @discord.ui.button(label='🌍 Global', style=discord.ButtonStyle.primary, row=1)
+            async def toggle_scope(self, interaction, button):
+                state['global'] = not state['global']
+                await self.refresh(interaction)
 
             async def on_timeout(self):
                 try:

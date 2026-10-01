@@ -360,52 +360,6 @@ async def ping(ctx):
     
     await ctx.send(embed=embed)
 
-@roxy.command(name='info', aliases=['about'])
-async def bot_info(ctx):
-    """Learn about Roxy"""
-    embed = discord.Embed(
-        title="🤖 About Roxy Bot",
-        description="Hi! I'm **Roxy**, your friendly neighborhood stats bot! I love tracking gaming sessions, music listening, messages, and helping you level up!",
-        color=discord.Color.purple()
-    )
-    
-    embed.add_field(
-        name="📊 What I Do",
-        value="• Track your gaming sessions\n• Monitor music listening (Spotify)\n• Monitor message counts\n• XP and leveling system\n• Server leaderboards\n• User profiles & statistics",
-        inline=False
-    )
-    
-    embed.add_field(name="🏠 Servers", value=len(roxy.guilds), inline=True)
-    embed.add_field(name="👥 Users", value=len(roxy.users), inline=True)
-    embed.add_field(name="🎮 Active Gamers", value=len(roxy.active_sessions), inline=True)
-    embed.add_field(name="🎵 Active Listeners", value=len(roxy.active_listening), inline=True)
-
-    # Patreon credits - everyone with a Supporter/Fan/VIP role in Roxy's server
-    patrons = get_patrons(roxy)
-    if patrons:
-        credits = ", ".join(f"{tier['emoji']} {member.display_name}" for member, tier in patrons)
-        if len(credits) > 1000:
-            credits = credits[:1000].rsplit(", ", 1)[0] + f" … and more!"
-        embed.add_field(name=f"💜 Patreon Supporters ({len(patrons)})", value=credits, inline=False)
-    else:
-        embed.add_field(name="💜 Patreon Supporters", value="Be the first! Find the Patreon button under `rr help`.", inline=False)
-    
-    # Show admin info only if user is admin
-    if is_admin_id(ctx.author.id):
-        embed.add_field(
-            name="👑 Admin Commands",
-            value="Use `rr admin` for admin controls",
-            inline=False
-        )
-        embed.set_footer(text="Made with ❤️ using discord.py | You are Roxy's Administrator")
-    else:
-        embed.set_footer(text="Made with ❤️ using discord.py | Use rr help for commands")
-    
-    if roxy.user:
-        embed.set_thumbnail(url=roxy.user.avatar.url if roxy.user.avatar else roxy.user.default_avatar.url)
-    
-    await ctx.send(embed=embed, view=link_buttons_view())
-
 def link_buttons_view():
     """Link buttons (Patreon, Roxy server, ...) set in .env - None if none are set"""
     if not LINK_BUTTONS:

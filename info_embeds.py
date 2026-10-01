@@ -232,3 +232,15 @@ def welcome_embed(member: discord.Member, settings: dict) -> discord.Embed:
     embed.set_thumbnail(url=member.display_avatar.url)
     embed.set_footer(text="🔒 Roxy tracks message counts, games, apps, voice and Spotify activity for stats - see the Privacy Policy")
     return embed
+
+
+async def delete_menu_message(interaction: discord.Interaction):
+    """Close button: delete the whole menu message - also works for "Only you can see this" replies"""
+    try:
+        await interaction.response.defer()
+        await interaction.delete_original_response()
+    except discord.HTTPException:
+        try:
+            await interaction.message.delete()
+        except (discord.HTTPException, AttributeError):
+            pass

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from database import RoxyDatabase
 from config import is_admin, is_admin_id, is_owner_or_server_admin
 import info_embeds
-from info_embeds import server_overview_embed
+from info_embeds import server_overview_embed, delete_menu_message
 from patreon import xp_multiplier
 
 
@@ -468,15 +468,8 @@ class RoxyAdmin(commands.Cog):
             
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="🏆 Achievement Menu Closed",
-                        description="Use `rr ach list` to open again.",
-                        color=discord.Color.red()
-                    ),
-                    view=None
-                )
                 self.stop()
+                await delete_menu_message(interaction)
             
             async def on_timeout(self):
                 # Disable all components when timeout occurs
@@ -1155,14 +1148,7 @@ class RoxyAdmin(commands.Cog):
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
                 self.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="📊 Statistics Closed",
-                        description="Use `rr totalstats` to open again.",
-                        color=discord.Color.red()
-                    ),
-                    view=None
-                )
+                await delete_menu_message(interaction)
 
             async def on_timeout(self):
                 try:
@@ -1233,7 +1219,7 @@ class RoxyAdmin(commands.Cog):
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger)
             async def close_menu(self, interaction, button):
                 self.stop()
-                await interaction.response.edit_message(view=None)
+                await delete_menu_message(interaction)
 
             async def on_timeout(self):
                 try:
@@ -1455,14 +1441,7 @@ class RoxyAdmin(commands.Cog):
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
                 self.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="🏠 Server Stats Closed",
-                        description="Use `rr serverstats [server id]` to open again.",
-                        color=discord.Color.red()
-                    ),
-                    view=None
-                )
+                await delete_menu_message(interaction)
 
             async def on_timeout(self):
                 try:
@@ -2187,16 +2166,9 @@ class RoxyAdmin(commands.Cog):
                 super().__init__(label='❌ Close', style=discord.ButtonStyle.danger)
             
             async def callback(self, interaction):
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="📋 Logs Menu Closed",
-                        description="Use `rr logs` to open again.",
-                        color=discord.Color.red()
-                    ),
-                    view=None
-                )
                 if self.view:
                     self.view.stop()
+                await delete_menu_message(interaction)
         
         # Create initial embed and view
         embed, total_pages = await build_category_embed(current_category, current_page)

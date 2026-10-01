@@ -4,7 +4,7 @@ from discord import app_commands
 from database import (RoxyDatabase, format_duration, MESSAGE_XP, VOICE_XP_PER_MINUTE, GAMING_XP_PER_MINUTE,
                       APP_XP_PER_MINUTE, LISTENING_XP_PER_2_MINUTES)
 from config import is_admin_id, is_server_admin, LINK_BUTTONS
-from info_embeds import server_overview_embed, profile_embed, global_profile_embed
+from info_embeds import server_overview_embed, profile_embed, global_profile_embed, delete_menu_message
 from patreon import get_patron_tier, get_patrons
 from datetime import datetime, timedelta
 import asyncio
@@ -1160,14 +1160,9 @@ class RoxyStats(commands.Cog):
                 super().__init__(label='❌ Close', style=discord.ButtonStyle.danger)
             
             async def callback(self, interaction):
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="💜 Profile Menu Closed",
-                        description="Use profile commands to view again.",
-                        color=discord.Color.red()
-                    ),
-                    view=None
-                )
+                if self.view:
+                    self.view.stop()
+                await delete_menu_message(interaction)
         
         async def get_current_embed():
             """Get embed for current view"""
@@ -1345,14 +1340,7 @@ class RoxyStats(commands.Cog):
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
                 self.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(
-                        title="🏆 Leaderboard Closed",
-                        description="Use `rr top` to open again.",
-                        color=discord.Color.red()
-                    ),
-                    view=None
-                )
+                await delete_menu_message(interaction)
 
             async def interaction_check(self, interaction):
                 # Only the person who ran the command can use their leaderboard menu
@@ -1393,7 +1381,7 @@ class RoxyStats(commands.Cog):
         # Works for anyone in this server, Roxy user or not - people outside the server are owner-only
         member = ctx.guild.get_member(target.id)
         if member is None and not is_admin_id(ctx.author.id):
-            await ctx.send("❌ You can only look up members of this server.")
+            await ctx.send(f'❌ Member "{target.id}" not found.')
             return
         try:
             # Raw API data: banner and accent color, plus nameplate/name style/tag that discord.py 2.5 doesn't parse
@@ -1445,7 +1433,7 @@ class RoxyStats(commands.Cog):
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
                 self.stop()
-                await interaction.response.edit_message(view=None)
+                await delete_menu_message(interaction)
 
             async def interaction_check(self, interaction):
                 if interaction.user.id != ctx.author.id:
@@ -1668,7 +1656,7 @@ class RoxyStats(commands.Cog):
             @discord.ui.button(label='❌ Close', style=discord.ButtonStyle.danger, row=1)
             async def close_menu(self, interaction, button):
                 self.stop()
-                await interaction.response.edit_message(view=None)
+                await delete_menu_message(interaction)
 
             async def on_timeout(self):
                 try:

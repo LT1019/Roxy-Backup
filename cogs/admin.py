@@ -1341,7 +1341,9 @@ class RoxyAdmin(commands.Cog):
             for number, member in enumerate(members[start:start + MEMBERS_PER_PAGE], start + 1):
                 joined = f"<t:{int(member.joined_at.timestamp())}:R>" if member.joined_at else "unknown"
                 tags = (" 🤖" if member.bot else "") + (" 👑" if member.id == guild.owner_id else "")
-                lines.append(f"`#{number}` **{member.display_name}**{tags} (@{member.name}) • joined {joined}")
+                name = discord.utils.escape_markdown(member.display_name)
+                username = discord.utils.escape_markdown(member.name)
+                lines.append(f"`#{number}` **{name}**{tags} (@{username}) • `{member.id}` • joined {joined}")
 
             embed = discord.Embed(
                 title=f"👥 Members of {guild.name}",

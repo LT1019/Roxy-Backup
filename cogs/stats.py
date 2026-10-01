@@ -98,8 +98,9 @@ class RoxyStats(commands.Cog):
         
         await self.send_profile_with_navigation(ctx, member, "music_history")
     
-    async def send_profile_with_navigation(self, ctx, member, initial_view):
-        """Send profile information with interactive navigation dropdown"""
+    async def send_profile_with_navigation(self, ctx, member, initial_view, owner_details=False):
+        """Send profile information with interactive navigation dropdown.
+        owner_details adds an Owner Details section (used by rr viewuser)."""
         
         stats = await self.db.get_user_stats(member.id)
 
@@ -295,6 +296,20 @@ class RoxyStats(commands.Cog):
                 inline=False
             )
             
+            # === OWNER DETAILS (rr viewuser) ===
+            if owner_details:
+                def seen(iso):
+                    return f"<t:{int(datetime.fromisoformat(iso).timestamp())}:R>" if iso else "Never"
+                summary = await self.db.get_user_data_summary(member.id)
+                embed.add_field(
+                    name="🔐 **Owner Details**",
+                    value=f"**ID:** `{user_id}`\n**Username:** {discord.utils.escape_markdown(str(username))}\n"
+                          f"**First seen:** {seen(join_date)} • **Last seen:** {seen(last_seen)}\n"
+                          f"**Sessions:** 🎮 {summary['game_sessions']:,} • 🎙️ {summary['voice_sessions']:,} • "
+                          f"💻 {summary['app_sessions']:,} • 🎵 {summary['listening_sessions']:,}",
+                    inline=False
+                )
+
             # === TIMELINE SECTION ===
             if join_date and last_seen:
                 try:

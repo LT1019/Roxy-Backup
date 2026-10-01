@@ -618,58 +618,14 @@ class RoxyAdmin(commands.Cog):
 
     @commands.command(name='viewuser')
     @is_admin()
-    async def view_user(self, ctx, member: discord.Member):
-        """View detailed user data (Admin only)"""
-        stats = await self.db.get_user_stats(member.id)
-        if not stats:
-            await ctx.send(f"❌ {member.display_name} isn't in the database yet.")
+    async def view_user(self, ctx, user: discord.User):
+        """The same profile as rr profile, plus Owner Details (ID, username, first/last seen, sessions) - Owner only"""
+        stats_cog = self.bot.get_cog('RoxyStats')
+        if stats_cog is None:
+            await ctx.send("❌ The stats cog isn't loaded - try `rr reload`.")
             return
-
-        (user_id, username, display_name, join_date, total_messages, total_playtime,
-         current_game, last_seen, level, xp, total_listening_time, current_song, current_artist) = stats[:13]
-        session_stats = await self.db.get_session_statistics(member.id)
-        listening_stats = await self.db.get_listening_statistics(member.id)
-        custom_achievements = await self.db.get_user_custom_achievements(member.id)
-
-        def fmt_time(seconds):
-            return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
-
-        def fmt_date(iso):
-            return f"<t:{int(datetime.fromisoformat(iso).timestamp())}:R>" if iso else "Never"
-
-        embed = discord.Embed(
-            title=f"🔍 User Data: {member.display_name}",
-            color=discord.Color.red()
-        )
-        embed.set_thumbnail(url=member.display_avatar.url)
-
-        embed.add_field(
-            name="🪪 Identity",
-            value=f"**ID:** {user_id}\n**Username:** {username}\n**First seen:** {fmt_date(join_date)}\n**Last seen:** {fmt_date(last_seen)}",
-            inline=False
-        )
-        embed.add_field(
-            name="📊 Progress",
-            value=f"**Level:** {level}\n**XP:** {xp:,}\n**Next level at:** {self.db.get_xp_for_level(level + 1):,} XP\n**Messages:** {total_messages:,}",
-            inline=True
-        )
-        embed.add_field(
-            name="🎮 Gaming",
-            value=f"**Total:** {fmt_time(total_playtime)}\n**Sessions:** {session_stats['total_sessions']}\n**Longest:** {session_stats['longest_session']}\n**Now:** {current_game or 'Nothing'}",
-            inline=True
-        )
-        embed.add_field(
-            name="🎵 Music",
-            value=f"**Total:** {fmt_time(total_listening_time)}\n**Sessions:** {listening_stats['total_sessions']}\n**Longest:** {listening_stats['longest_session']}\n**Now:** {f'{current_song} by {current_artist}' if current_song else 'Nothing'}",
-            inline=True
-        )
-        embed.add_field(
-            name="🎖️ Granted Achievements",
-            value="\n".join(f"• {name}" for name, _ in custom_achievements)[:1024] or "None",
-            inline=False
-        )
-
-        await ctx.send(embed=embed)
+        member = ctx.guild.get_member(user.id) if ctx.guild else None
+        await stats_cog.send_profile_with_navigation(ctx, member or user, 'profile', owner_details=True)
 
     @commands.command(name='forceupdate')
     @is_admin()

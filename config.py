@@ -10,6 +10,7 @@ ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '526795891487670302'))
 # Link buttons shown under rr help and rr info - leave a value unset in .env to hide its button
 LINK_BUTTONS = [
     (label, url) for label, url in (
+        ('➕ Invite Roxy', os.getenv('INVITE_URL', '').strip()),
         ('☕ Ko-fi - Support Roxy', os.getenv('KOFI_URL', '').strip()),
         ('💖 Patreon - Support Roxy', os.getenv('PATREON_URL', '').strip()),
         ('💬 Support', os.getenv('SUPPORT_SERVER_URL', '').strip()),

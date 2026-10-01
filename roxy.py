@@ -341,6 +341,23 @@ def link_buttons_view():
         view.add_item(discord.ui.Button(label=label, url=url))
     return view
 
+@roxy.command(name='invite', aliases=['add'])
+async def invite(ctx):
+    """Link to add Roxy to another server"""
+    invite_url = next((url for label, url in LINK_BUTTONS if label.startswith('➕')), None)
+    if not invite_url:
+        await ctx.send("❌ The invite link isn't set up yet.")
+        return
+
+    embed = discord.Embed(
+        title="➕ Add Roxy to your server",
+        description="Levels, gaming time and Spotify stats for your members - all automatic, no sign-ups.\n\nClick the button below, pick your server and press **Authorize**. You need **Manage Server** permission in that server.",
+        color=discord.Color.purple()
+    )
+    if roxy.user:
+        embed.set_thumbnail(url=roxy.user.display_avatar.url)
+    await ctx.send(embed=embed, view=link_buttons_view())
+
 @roxy.command(name='help')
 async def help_command(ctx, *, command=None):
     """Roxy's help menu"""
@@ -463,7 +480,7 @@ async def help_command(ctx, *, command=None):
 
     embed.add_field(
         name="🤖 Bot Commands",
-        value="`rr ping` - Check my response time\n`rr info` - Learn about me\n`rr help` - This menu",
+        value="`rr ping` - Check my response time\n`rr info` - Learn about me\n`rr invite` - Add me to your server\n`rr help` - This menu",
         inline=False
     )
     

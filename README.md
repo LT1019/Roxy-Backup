@@ -100,6 +100,11 @@ Problems solved while building Roxy:
 - **Reliability:** crash recovery for open sessions, a single-instance lock (two copies used to double every reply), safe shutdown that saves active sessions, and a hot reload that also reloads the shared modules.
 - **Discord limits:** text is shortened to fit embed limits (1,024 per field, 4,096 per description), names are escaped so `_` and `*` don't break formatting, and long lists are paginated.
 
+## Documentation
+- 📖 [Case Study](docs/CASE_STUDY.md): the problems I found, what I changed and what I learned
+- ⌨️ [Commands](docs/COMMANDS.md): every command and who can use it
+- 🛠️ [Setup and Operations](docs/SETUP.md): configuration, running 24/7, updates and backups
+
 ## Running it locally
 1. Install Python 3.13 and create a virtual environment.
 2. `pip install -r requirements.txt`

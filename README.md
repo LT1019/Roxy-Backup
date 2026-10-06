@@ -8,6 +8,21 @@ Roxy is live in 20+ servers with 1,600+ members.
 
 > This repository is a portfolio copy of the bot's source code. Running your own copy needs a Discord bot token (see [Running it locally](#running-it-locally)).
 
+## Screenshots
+
+<table>
+  <tr>
+    <th>Profile</th>
+    <th>Leaderboard</th>
+    <th>Command center</th>
+  </tr>
+  <tr>
+    <td valign="top"><img src="images/profile.png" alt="Roxy profile with level, activity, time tracked, live status and achievements" width="280"></td>
+    <td valign="top"><img src="images/leaderboard.png" alt="Messages leaderboard with category dropdown, pages and a Global toggle" width="280"></td>
+    <td valign="top"><img src="images/help.png" alt="Help menu with page and view-mode dropdowns and link buttons" width="280"></td>
+  </tr>
+</table>
+
 ---
 
 ## Features
